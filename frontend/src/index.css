@@ -1,0 +1,22 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html, body, #root {
+    @apply h-full w-full m-0 p-0;
+  }
+  body {
+    @apply bg-gray-50 text-gray-900 antialiased;
+    /* Evitar zoom en inputs en iOS/Android */
+    touch-action: manipulation;
+    -webkit-text-size-adjust: 100%;
+  }
+}
+
+@layer utilities {
+  /* Botones grandes mínimo 48px para touch */
+  .btn-touch {
+    @apply min-h-[48px] min-w-[48px] flex items-center justify-center;
+  }
+}

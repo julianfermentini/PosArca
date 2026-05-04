@@ -1,0 +1,70 @@
+package config
+
+import (
+	"log/slog"
+	"os"
+	"strconv"
+
+	"github.com/joho/godotenv"
+)
+
+type Config struct {
+	DatabaseURL    string // PostgreSQL DSN para GORM (Supabase connection string)
+	SupabaseURL    string // URL de la REST API de Supabase
+	SupabaseKey    string
+	ArcaCUIT       string
+	ArcaCertPath   string
+	ArcaKeyPath    string
+	ArcaEnv        string
+	ArcaPuntoVenta int
+	SMTPHost       string
+	SMTPPort       int
+	SMTPUser       string
+	SMTPPass       string
+	PrinterPort    string
+	PrinterBaud    int
+	Port           string
+}
+
+func Load() *Config {
+	if err := godotenv.Load(); err != nil {
+		slog.Info("sin archivo .env, usando variables de entorno del sistema")
+	}
+
+	smtpPort, _ := strconv.Atoi(getEnv("SMTP_PORT", "587"))
+	printerBaud, _ := strconv.Atoi(getEnv("PRINTER_BAUD", "9600"))
+	puntoVenta, _ := strconv.Atoi(getEnv("ARCA_PUNTO_VENTA", "1"))
+
+	return &Config{
+		DatabaseURL:    mustGetEnv("DATABASE_URL"),
+		SupabaseURL:    getEnv("SUPABASE_URL", ""),
+		SupabaseKey:    getEnv("SUPABASE_KEY", ""),
+		ArcaCUIT:       mustGetEnv("ARCA_CUIT"),
+		ArcaCertPath:   mustGetEnv("ARCA_CERT_PATH"),
+		ArcaKeyPath:    mustGetEnv("ARCA_KEY_PATH"),
+		ArcaEnv:        getEnv("ARCA_ENV", "testing"),
+		ArcaPuntoVenta: puntoVenta,
+		SMTPHost:       getEnv("SMTP_HOST", "smtp.gmail.com"),
+		SMTPPort:       smtpPort,
+		SMTPUser:       getEnv("SMTP_USER", ""),
+		SMTPPass:       getEnv("SMTP_PASS", ""),
+		PrinterPort:    getEnv("PRINTER_PORT", "/dev/ttyUSB0"),
+		PrinterBaud:    printerBaud,
+		Port:           getEnv("PORT", "8080"),
+	}
+}
+
+func getEnv(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}
+
+func mustGetEnv(key string) string {
+	v := os.Getenv(key)
+	if v == "" {
+		slog.Warn("variable de entorno no configurada", "key", key)
+	}
+	return v
+}

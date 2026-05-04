@@ -1,0 +1,15 @@
+package models
+
+import "github.com/google/uuid"
+
+type ConfigEmpresa struct {
+	ID          uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	CUIT        string    `gorm:"not null" json:"cuit"`
+	RazonSocial string    `gorm:"not null" json:"razon_social"`
+	PuntoVenta  int       `gorm:"default:1" json:"punto_venta"`
+	CertPath    string    `json:"cert_path,omitempty"`
+	KeyPath     string    `json:"key_path,omitempty"`
+	ArcaEnv     string    `gorm:"default:'testing'" json:"arca_env"`
+}
+
+func (ConfigEmpresa) TableName() string { return "config_empresa" }
