@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { ApiResponse, Venta, Factura, ResumenCierre, VentaOffline } from '../types'
+import type { ApiResponse, Venta, Factura, ResumenCierre, VentaOffline, ItemRequest } from '../types'
 
 const api = axios.create({
   baseURL: '/api',
@@ -9,12 +9,12 @@ const api = axios.create({
 
 export interface CrearVentaPayload {
   tipo: 'TICKET'
-  items: { descripcion: string; precio_neto: number; iva: number; total: number }[]
+  items: ItemRequest[]
   metodo_pago: 'EFECTIVO' | 'TARJETA' | 'BILLETERA'
 }
 
 export interface CrearFacturaPayload {
-  items: { descripcion: string; precio_neto: number; iva: number; total: number }[]
+  items: ItemRequest[]
   metodo_pago: 'EFECTIVO' | 'TARJETA' | 'BILLETERA'
   razon_social: string
   cuit_cliente: string

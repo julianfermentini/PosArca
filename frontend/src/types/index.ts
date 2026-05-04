@@ -3,25 +3,26 @@ export type MetodoPago = 'EFECTIVO' | 'TARJETA' | 'BILLETERA'
 export type EstadoFactura = 'PENDIENTE' | 'AUTORIZADO' | 'ERROR'
 export type EstadoSync = 'PENDIENTE' | 'PROCESANDO' | 'SINCRONIZADO' | 'ERROR'
 
-export interface ItemVenta {
+// Ítem normalizado — una fila en venta_items
+export interface VentaItem {
+  id: string
+  venta_id: string
   descripcion: string
   precio_neto: number
   iva: number
   total: number
+  orden: number
 }
 
 export interface Venta {
   id: string
   tipo: TipoComprobante
   numero: string
-  items: ItemVenta[]
-  subtotal: number
-  iva: number
-  total: number
   metodo_pago: MetodoPago
   impreso: boolean
   sincronizado: boolean
   created_at: string
+  items: VentaItem[]
 }
 
 export interface Factura {
@@ -35,9 +36,22 @@ export interface Factura {
   estado: EstadoFactura
   email_enviado: boolean
   created_at: string
+  venta?: Venta
 }
 
-export interface VentaOffline extends Omit<Venta, 'numero' | 'impreso' | 'sincronizado'> {
+// Lo que el frontend envía al backend — solo descripción y precio neto
+// El backend calcula IVA y total
+export interface ItemRequest {
+  descripcion: string
+  precio_neto: number
+}
+
+export interface VentaOffline {
+  id: string
+  tipo: TipoComprobante
+  items: ItemRequest[]
+  metodo_pago: MetodoPago
+  created_at: string
   estado_sync: EstadoSync
 }
 
@@ -60,9 +74,9 @@ export interface ApiResponse<T> {
   error?: string
 }
 
-// Para el carrito de la pantalla de venta (antes de guardar)
+// Ítem en el carrito local (antes de guardar)
 export interface ItemCarrito {
-  id: string // UUID local temporal
+  id: string
   descripcion: string
   precio_neto: number
 }

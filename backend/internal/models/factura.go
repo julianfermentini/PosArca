@@ -18,9 +18,9 @@ type Factura struct {
 	ID             uuid.UUID     `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
 	VentaID        uuid.UUID     `gorm:"type:uuid;not null" json:"venta_id"`
 	Venta          Venta         `gorm:"foreignKey:VentaID" json:"-"`
-	RazonSocial    string        `gorm:"not null" json:"razon_social"`
-	CUITCliente    string        `gorm:"not null" json:"cuit_cliente"`
-	EmailCliente   string        `gorm:"not null" json:"email_cliente"`
+	RazonSocial  string        `gorm:"column:razon_social;not null" json:"razon_social"`
+	CUITCliente  string        `gorm:"column:cuit_cliente;not null" json:"cuit_cliente"`
+	EmailCliente string        `gorm:"column:email_cliente;not null" json:"email_cliente"`
 	CAE            string        `json:"cae,omitempty"`
 	CAEVto         *time.Time    `json:"cae_vto,omitempty"`
 	Estado         EstadoFactura `gorm:"default:'PENDIENTE'" json:"estado"`

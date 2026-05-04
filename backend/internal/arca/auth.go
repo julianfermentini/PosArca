@@ -3,8 +3,6 @@ package arca
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
-	"crypto/rsa"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
@@ -12,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"math/big"
 	"net/http"
 	"os"
 	"sync"
@@ -117,11 +114,6 @@ func signTRA(tra []byte, certPath, keyPath string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("parsear clave privada: %w", err)
 	}
-
-	// Workaround para que pkcs7 use la clave correctamente
-	_ = rsa.GenerateKey
-	_ = rand.Reader
-	_ = big.NewInt
 
 	signed, err := pkcs7.NewSignedData(tra)
 	if err != nil {

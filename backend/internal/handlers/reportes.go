@@ -42,46 +42,51 @@ func (h *ReportesHandler) CierreCaja(c *gin.Context) {
 	} else {
 		fecha, err = time.Parse("2006-01-02", fechaStr)
 		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "fecha inválida, usar formato YYYY-MM-DD"})
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "fecha inválida, usar YYYY-MM-DD"})
 			return
 		}
 	}
 
 	fechaSQL := fecha.Format("2006-01-02")
-
 	var resumen ResumenCierre
 
-	// Total general
-	h.db.Model(&models.Venta{}).
-		Where("DATE(created_at) = ?", fechaSQL).
-		Count(&resumen.TotalVentas)
+	// Conteos por tipo
+	h.db.Model(&models.Venta{}).Where("DATE(created_at) = ?", fechaSQL).Count(&resumen.TotalVentas)
+	h.db.Model(&models.Venta{}).Where("DATE(created_at) = ? AND tipo = ?", fechaSQL, models.TipoTicket).Count(&resumen.TotalTickets)
+	h.db.Model(&models.Venta{}).Where("DATE(created_at) = ? AND tipo = ?", fechaSQL, models.TipoFactura).Count(&resumen.TotalFacturas)
 
-	h.db.Model(&models.Venta{}).
-		Where("DATE(created_at) = ? AND tipo = ?", fechaSQL, models.TipoTicket).
-		Count(&resumen.TotalTickets)
+	// Totales monetarios: JOIN ventas ↔ venta_items
+	type montos struct {
+		MontoTotal float64
+		MontoIVA   float64
+	}
+	var m montos
+	h.db.Raw(`
+		SELECT
+			COALESCE(SUM(vi.total), 0) AS monto_total,
+			COALESCE(SUM(vi.iva),   0) AS monto_iva
+		FROM ventas v
+		JOIN venta_items vi ON vi.venta_id = v.id
+		WHERE DATE(v.created_at) = ?`, fechaSQL).Scan(&m)
 
-	h.db.Model(&models.Venta{}).
-		Where("DATE(created_at) = ? AND tipo = ?", fechaSQL, models.TipoFactura).
-		Count(&resumen.TotalFacturas)
-
-	// Totales monetarios
-	h.db.Model(&models.Venta{}).
-		Where("DATE(created_at) = ?", fechaSQL).
-		Select("COALESCE(SUM(total), 0) as monto_total, COALESCE(SUM(iva), 0) as monto_iva").
-		Row().Scan(&resumen.MontoTotal, &resumen.MontoIVA)
+	resumen.MontoTotal = m.MontoTotal
+	resumen.MontoIVA = m.MontoIVA
 
 	// Por método de pago
-	h.db.Model(&models.Venta{}).
-		Where("DATE(created_at) = ? AND metodo_pago = ?", fechaSQL, models.PagoEfectivo).
-		Select("COALESCE(SUM(total), 0)").Row().Scan(&resumen.PorMetodoPago.Efectivo)
+	scanMetodo := func(metodo models.MetodoPago) float64 {
+		var total float64
+		h.db.Raw(`
+			SELECT COALESCE(SUM(vi.total), 0)
+			FROM ventas v
+			JOIN venta_items vi ON vi.venta_id = v.id
+			WHERE DATE(v.created_at) = ? AND v.metodo_pago = ?`,
+			fechaSQL, metodo).Scan(&total)
+		return total
+	}
 
-	h.db.Model(&models.Venta{}).
-		Where("DATE(created_at) = ? AND metodo_pago = ?", fechaSQL, models.PagoTarjeta).
-		Select("COALESCE(SUM(total), 0)").Row().Scan(&resumen.PorMetodoPago.Tarjeta)
-
-	h.db.Model(&models.Venta{}).
-		Where("DATE(created_at) = ? AND metodo_pago = ?", fechaSQL, models.PagoBilletera).
-		Select("COALESCE(SUM(total), 0)").Row().Scan(&resumen.PorMetodoPago.Billetera)
+	resumen.PorMetodoPago.Efectivo  = scanMetodo(models.PagoEfectivo)
+	resumen.PorMetodoPago.Tarjeta   = scanMetodo(models.PagoTarjeta)
+	resumen.PorMetodoPago.Billetera = scanMetodo(models.PagoBilletera)
 
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": resumen})
 }

@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
 	"net/http"
 	"time"
@@ -19,10 +18,10 @@ import (
 )
 
 type FacturasHandler struct {
-	db        *gorm.DB
-	cfg       *config.Config
-	imp       *impresora.Impresora
-	emailCli  *email.Cliente
+	db       *gorm.DB
+	cfg      *config.Config
+	imp      *impresora.Impresora
+	emailCli *email.Cliente
 }
 
 func NuevoFacturasHandler(db *gorm.DB, cfg *config.Config, imp *impresora.Impresora, emailCli *email.Cliente) *FacturasHandler {
@@ -30,11 +29,11 @@ func NuevoFacturasHandler(db *gorm.DB, cfg *config.Config, imp *impresora.Impres
 }
 
 type CrearFacturaRequest struct {
-	Items        []models.ItemVenta `json:"items" binding:"required,min=1"`
-	MetodoPago   models.MetodoPago  `json:"metodo_pago" binding:"required,oneof=EFECTIVO TARJETA BILLETERA"`
-	RazonSocial  string             `json:"razon_social" binding:"required"`
-	CUITCliente  string             `json:"cuit_cliente" binding:"required"`
-	EmailCliente string             `json:"email_cliente" binding:"required,email"`
+	Items        []models.ItemRequest `json:"items" binding:"required,min=1"`
+	MetodoPago   models.MetodoPago    `json:"metodo_pago" binding:"required,oneof=EFECTIVO TARJETA BILLETERA"`
+	RazonSocial  string               `json:"razon_social" binding:"required"`
+	CUITCliente  string               `json:"cuit_cliente" binding:"required"`
+	EmailCliente string               `json:"email_cliente" binding:"required,email"`
 }
 
 // Crear maneja POST /api/facturas
@@ -45,60 +44,67 @@ func (h *FacturasHandler) Crear(c *gin.Context) {
 		return
 	}
 
-	subtotal, iva, total := models.CalcularTotales(req.Items)
-
-	ventaHandler := &VentasHandler{db: h.db, cfg: h.cfg, impresora: h.imp}
-	numero, err := ventaHandler.siguienteNumero(models.TipoFactura)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "error asignando número"})
-		return
-	}
-
-	itemsJSON, err := json.Marshal(req.Items)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "error serializando items"})
-		return
-	}
-
-	venta := models.Venta{
-		ID:           uuid.New(),
-		Tipo:         models.TipoFactura,
-		Numero:       numero,
-		Items:        itemsJSON,
-		Subtotal:     subtotal,
-		IVA:          iva,
-		Total:        total,
-		MetodoPago:   req.MetodoPago,
-		Sincronizado: false,
-	}
-
 	ctx := c.Request.Context()
+	vh := &VentasHandler{db: h.db, cfg: h.cfg, impresora: h.imp}
 
-	// Tipo A si tiene CUIT válido
+	var ventaID uuid.UUID
+	var numero string
+
+	err := h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var err error
+		numero, err = siguienteNumero(tx, models.TipoFactura, h.cfg.ArcaPuntoVenta)
+		if err != nil {
+			return err
+		}
+
+		ventaID = uuid.New()
+		venta := models.Venta{
+			ID:         ventaID,
+			Tipo:       models.TipoFactura,
+			Numero:     numero,
+			MetodoPago: req.MetodoPago,
+		}
+		if err := tx.Create(&venta).Error; err != nil {
+			return err
+		}
+
+		for i, itemReq := range req.Items {
+			item := models.NuevoVentaItem(ventaID, itemReq, i)
+			if err := tx.Create(&item).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+
+	var venta models.Venta
+	h.db.Preload("Items", func(db *gorm.DB) *gorm.DB {
+		return db.Order("orden ASC")
+	}).First(&venta, "id = ?", ventaID)
+
+	_, iva, total := models.TotalesDeItems(venta.Items)
+
 	docNro := parseCUIT(req.CUITCliente)
 	docTipo := arca.TipoDocConsumidorFinal
-	tipoCmp := arca.TipoFacturaB
 	if docNro > 0 {
 		docTipo = arca.TipoDocCUIT
-		tipoCmp = arca.TipoFacturaA
 	}
-	_ = tipoCmp
 
-	caeResult, err := ventaHandler.solicitarCAE(ctx, &venta, docNro, docTipo)
+	caeResult, err := vh.solicitarCAE(ctx, ventaID, iva, total, venta.Items, docNro, docTipo)
 	if err != nil {
-		slog.Error("solicitar CAE para factura", "err", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "error obteniendo CAE: " + err.Error()})
-		return
-	}
-
-	if err := h.db.Create(&venta).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "error guardando venta"})
+		slog.Error("CAE factura", "err", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "error CAE: " + err.Error()})
 		return
 	}
 
 	factura := models.Factura{
 		ID:           uuid.New(),
-		VentaID:      venta.ID,
+		VentaID:      ventaID,
 		RazonSocial:  req.RazonSocial,
 		CUITCliente:  req.CUITCliente,
 		EmailCliente: req.EmailCliente,
@@ -113,19 +119,18 @@ func (h *FacturasHandler) Crear(c *gin.Context) {
 		return
 	}
 
-	// Imprimir y enviar email en background
-	go h.procesarFacturaBackground(venta, factura, caeResult, req.RazonSocial)
+	go h.procesarBackground(venta, factura, caeResult, total)
 
 	c.JSON(http.StatusCreated, gin.H{
 		"success": true,
 		"data": gin.H{
 			"id":            factura.ID,
-			"venta_id":      venta.ID,
+			"venta_id":      ventaID,
 			"numero":        numero,
 			"cae":           caeResult.CAE,
 			"cae_vto":       caeResult.FchVto.Format("2006-01-02"),
 			"total":         total,
-			"email_enviado": false, // se envía en background
+			"email_enviado": false,
 		},
 	})
 }
@@ -133,35 +138,34 @@ func (h *FacturasHandler) Crear(c *gin.Context) {
 // Listar maneja GET /api/facturas
 func (h *FacturasHandler) Listar(c *gin.Context) {
 	var facturas []models.Factura
-	if err := h.db.Preload("Venta").Order("created_at desc").Limit(100).Find(&facturas).Error; err != nil {
+	if err := h.db.Preload("Venta.Items", func(db *gorm.DB) *gorm.DB {
+		return db.Order("orden ASC")
+	}).Order("created_at desc").Limit(100).Find(&facturas).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": facturas})
 }
 
-func (h *FacturasHandler) procesarFacturaBackground(venta models.Venta, factura models.Factura, cae *arca.ResultadoCAE, razonSocial string) {
+func (h *FacturasHandler) procesarBackground(venta models.Venta, factura models.Factura, cae *arca.ResultadoCAE, total float64) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Imprimir
-	ventaHandler := &VentasHandler{db: h.db, cfg: h.cfg, impresora: h.imp}
-	ventaHandler.imprimirTicket(venta, cae)
+	vh := &VentasHandler{db: h.db, cfg: h.cfg, impresora: h.imp}
+	vh.imprimirTicket(venta, cae)
 
-	// Enviar email
 	datosEmail := email.DatosFactura{
-		RazonSocial: razonSocial,
+		RazonSocial: factura.RazonSocial,
 		CUIT:        factura.CUITCliente,
 		Numero:      venta.Numero,
-		Total:       venta.Total,
+		Total:       total,
 		CAE:         factura.CAE,
 	}
 
 	if err := h.emailCli.EnviarFactura(ctx, factura.EmailCliente, datosEmail); err != nil {
-		slog.Error("enviar email factura", "err", err, "email", factura.EmailCliente)
+		slog.Error("enviar email factura", "err", err)
 		return
 	}
 
 	h.db.Model(&factura).Update("email_enviado", true)
-	slog.Info("factura procesada", "numero", venta.Numero, "email", factura.EmailCliente)
 }

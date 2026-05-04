@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { ItemCarrito, MetodoPago } from '../types'
+import type { ItemCarrito, MetodoPago, ItemRequest } from '../types'
 import { calcularIVA, calcularTotal } from '../lib/utils'
 
 const newId = () => crypto.randomUUID()
@@ -10,7 +10,6 @@ interface VentaState {
   descripcionActual: string
   precioActual: string
 
-  // Acciones de carrito
   setDescripcion: (desc: string) => void
   setPrecio: (precio: string) => void
   agregarItem: () => void
@@ -18,11 +17,13 @@ interface VentaState {
   limpiarCarrito: () => void
   setMetodoPago: (metodo: MetodoPago) => void
 
-  // Computed (calculados a partir del carrito)
+  // Totales calculados localmente para mostrar en pantalla
   getSubtotal: () => number
   getIVA: () => number
   getTotal: () => number
-  getItemsParaAPI: () => { descripcion: string; precio_neto: number; iva: number; total: number }[]
+
+  // Solo descripcion + precio_neto — el backend calcula IVA y total
+  getItemsParaAPI: () => ItemRequest[]
 }
 
 export const useVentaStore = create<VentaState>((set, get) => ({
@@ -39,14 +40,8 @@ export const useVentaStore = create<VentaState>((set, get) => ({
     const precioNeto = parseFloat(precioActual)
     if (!descripcionActual.trim() || isNaN(precioNeto) || precioNeto <= 0) return
 
-    const item: ItemCarrito = {
-      id: newId(),
-      descripcion: descripcionActual.trim(),
-      precio_neto: precioNeto,
-    }
-
     set((s) => ({
-      carrito: [...s.carrito, item],
+      carrito: [...s.carrito, { id: newId(), descripcion: descripcionActual.trim(), precio_neto: precioNeto }],
       descripcionActual: '',
       precioActual: '',
     }))
@@ -63,21 +58,14 @@ export const useVentaStore = create<VentaState>((set, get) => ({
   getSubtotal: () =>
     get().carrito.reduce((acc, item) => acc + item.precio_neto, 0),
 
-  getIVA: () => {
-    const subtotal = get().getSubtotal()
-    return calcularIVA(subtotal)
-  },
+  getIVA: () => calcularIVA(get().getSubtotal()),
 
-  getTotal: () => {
-    const subtotal = get().getSubtotal()
-    return calcularTotal(subtotal)
-  },
+  getTotal: () => calcularTotal(get().getSubtotal()),
 
+  // El backend recalcula — solo enviamos lo mínimo
   getItemsParaAPI: () =>
     get().carrito.map((item) => ({
       descripcion: item.descripcion,
       precio_neto: item.precio_neto,
-      iva: calcularIVA(item.precio_neto),
-      total: calcularTotal(item.precio_neto),
     })),
 }))

@@ -2,7 +2,7 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"sync"
@@ -27,15 +27,11 @@ func NuevoSyncHandler(db *gorm.DB, cfg *config.Config) *SyncHandler {
 }
 
 type VentaOffline struct {
-	ID          string             `json:"id"`
-	Tipo        models.TipoComprobante `json:"tipo"`
-	Items       []models.ItemVenta `json:"items"`
-	MetodoPago  models.MetodoPago  `json:"metodo_pago"`
-	CreatedAt   time.Time          `json:"created_at"`
-}
-
-type SyncRequest struct {
-	Ventas []VentaOffline `json:"ventas" binding:"required"`
+	ID         string                 `json:"id"`
+	Tipo       models.TipoComprobante `json:"tipo"`
+	Items      []models.ItemRequest   `json:"items"`
+	MetodoPago models.MetodoPago      `json:"metodo_pago"`
+	CreatedAt  time.Time              `json:"created_at"`
 }
 
 type SyncResultado struct {
@@ -47,9 +43,10 @@ type SyncResultado struct {
 }
 
 // SincronizarVentas maneja POST /api/sync/ventas
-// Procesa ventas offline en paralelo con goroutines.
 func (h *SyncHandler) SincronizarVentas(c *gin.Context) {
-	var req SyncRequest
+	var req struct {
+		Ventas []VentaOffline `json:"ventas" binding:"required"`
+	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
 		return
@@ -59,12 +56,12 @@ func (h *SyncHandler) SincronizarVentas(c *gin.Context) {
 	resultados := make([]SyncResultado, len(req.Ventas))
 
 	var wg sync.WaitGroup
-	for i, vOffline := range req.Ventas {
+	for i, v := range req.Ventas {
 		wg.Add(1)
-		go func(idx int, v VentaOffline) {
+		go func(idx int, venta VentaOffline) {
 			defer wg.Done()
-			resultados[idx] = h.procesarVentaOffline(ctx, v)
-		}(i, vOffline)
+			resultados[idx] = h.procesarOffline(ctx, venta)
+		}(i, v)
 	}
 	wg.Wait()
 
@@ -75,61 +72,72 @@ func (h *SyncHandler) SincronizarVentas(c *gin.Context) {
 		}
 	}
 
-	slog.Info("sincronización completada", "total", len(req.Ventas), "exitosos", exitosos)
-
+	slog.Info("sync completado", "total", len(req.Ventas), "exitosos", exitosos)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data": gin.H{
-			"total":     len(req.Ventas),
-			"exitosos":  exitosos,
+			"total":      len(req.Ventas),
+			"exitosos":   exitosos,
 			"resultados": resultados,
 		},
 	})
 }
 
-func (h *SyncHandler) procesarVentaOffline(ctx context.Context, v VentaOffline) SyncResultado {
-	// Verificar si ya fue procesada (idempotencia por UUID)
+func (h *SyncHandler) procesarOffline(ctx context.Context, v VentaOffline) SyncResultado {
 	ventaID, err := uuid.Parse(v.ID)
 	if err != nil {
 		return SyncResultado{ID: v.ID, Error: "UUID inválido", Success: false}
 	}
 
+	// Idempotencia — si ya existe, devolver éxito sin reprocesar
 	var existente models.Venta
-	if err := h.db.Where("id = ?", ventaID).First(&existente).Error; err == nil {
-		// Ya procesada — devolver éxito sin reprocesar
+	if h.db.Where("id = ?", ventaID).First(&existente).Error == nil {
 		return SyncResultado{ID: v.ID, Numero: existente.Numero, Success: true}
 	}
 
-	subtotal, iva, total := models.CalcularTotales(v.Items)
+	var numero string
+	err = h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var err error
+		numero, err = siguienteNumero(tx, v.Tipo, h.cfg.ArcaPuntoVenta)
+		if err != nil {
+			return fmt.Errorf("número: %w", err)
+		}
 
-	ventaHandler := &VentasHandler{db: h.db, cfg: h.cfg}
-	numero, err := ventaHandler.siguienteNumero(v.Tipo)
+		venta := models.Venta{
+			ID:           ventaID,
+			Tipo:         v.Tipo,
+			Numero:       numero,
+			MetodoPago:   v.MetodoPago,
+			CreatedAt:    v.CreatedAt,
+			Sincronizado: true,
+		}
+		if err := tx.Create(&venta).Error; err != nil {
+			return err
+		}
+
+		for i, itemReq := range v.Items {
+			item := models.NuevoVentaItem(ventaID, itemReq, i)
+			if err := tx.Create(&item).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+
 	if err != nil {
-		return SyncResultado{ID: v.ID, Error: "error asignando número: " + err.Error(), Success: false}
+		return SyncResultado{ID: v.ID, Error: err.Error(), Success: false}
 	}
 
-	itemsJSON, _ := json.Marshal(v.Items)
-	venta := models.Venta{
-		ID:           ventaID,
-		Tipo:         v.Tipo,
-		Numero:       numero,
-		Items:        itemsJSON,
-		Subtotal:     subtotal,
-		IVA:          iva,
-		Total:        total,
-		MetodoPago:   v.MetodoPago,
-		CreatedAt:    v.CreatedAt,
-		Sincronizado: true,
-	}
+	// Calcular totales para CAE
+	var items []models.VentaItem
+	h.db.Where("venta_id = ?", ventaID).Order("orden ASC").Find(&items)
+	_, iva, total := models.TotalesDeItems(items)
 
-	caeResult, err := ventaHandler.solicitarCAE(ctx, &venta, 0, arca.TipoDocConsumidorFinal)
+	vh := &VentasHandler{db: h.db, cfg: h.cfg}
+	caeResult, err := vh.solicitarCAE(ctx, ventaID, iva, total, items, 0, arca.TipoDocConsumidorFinal)
 	if err != nil {
-		slog.Error("CAE en sync offline", "id", v.ID, "err", err)
-		return SyncResultado{ID: v.ID, Error: "error CAE: " + err.Error(), Success: false}
-	}
-
-	if err := h.db.Create(&venta).Error; err != nil {
-		return SyncResultado{ID: v.ID, Error: "error DB: " + err.Error(), Success: false}
+		slog.Error("CAE sync", "id", v.ID, "err", err)
+		return SyncResultado{ID: v.ID, Error: "CAE: " + err.Error(), Success: false}
 	}
 
 	return SyncResultado{ID: v.ID, Numero: numero, CAE: caeResult.CAE, Success: true}
