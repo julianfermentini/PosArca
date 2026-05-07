@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type { ItemCarrito, MetodoPago, ItemRequest } from '../types'
-import { calcularIVA, calcularTotal } from '../lib/utils'
+import { calcularIVA, calcularTotal, calcularNeto } from '../lib/utils'
 
 const newId = () => crypto.randomUUID()
 
@@ -13,6 +13,7 @@ interface VentaState {
   setDescripcion: (desc: string) => void
   setPrecio: (precio: string) => void
   agregarItem: () => void
+  agregarItemDirecto: (descripcion: string, precioFinal: number) => void
   eliminarItem: (id: string) => void
   limpiarCarrito: () => void
   setMetodoPago: (metodo: MetodoPago) => void
@@ -37,13 +38,22 @@ export const useVentaStore = create<VentaState>((set, get) => ({
 
   agregarItem: () => {
     const { descripcionActual, precioActual } = get()
-    const precioNeto = parseFloat(precioActual)
-    if (!descripcionActual.trim() || isNaN(precioNeto) || precioNeto <= 0) return
+    const precioFinal = parseFloat(precioActual)
+    if (!descripcionActual.trim() || isNaN(precioFinal) || precioFinal <= 0) return
+    const precioNeto = calcularNeto(precioFinal)
 
     set((s) => ({
       carrito: [...s.carrito, { id: newId(), descripcion: descripcionActual.trim(), precio_neto: precioNeto }],
       descripcionActual: '',
       precioActual: '',
+    }))
+  },
+
+  agregarItemDirecto: (descripcion, precioFinal) => {
+    const precioNeto = calcularNeto(precioFinal)
+    if (!descripcion.trim() || precioNeto <= 0) return
+    set((s) => ({
+      carrito: [...s.carrito, { id: newId(), descripcion: descripcion.trim(), precio_neto: precioNeto }],
     }))
   },
 

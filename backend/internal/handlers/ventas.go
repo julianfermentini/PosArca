@@ -45,7 +45,6 @@ func (h *VentasHandler) Crear(c *gin.Context) {
 
 	var ventaID uuid.UUID
 	var numero string
-	var caeResult *arca.ResultadoCAE
 
 	err := h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var err error
@@ -91,7 +90,7 @@ func (h *VentasHandler) Crear(c *gin.Context) {
 
 	_, iva, total := models.TotalesDeItems(venta.Items)
 
-	caeResult, err = h.solicitarCAE(ctx, ventaID, iva, total, venta.Items, 0, arca.TipoDocConsumidorFinal)
+	caeResult, err := h.solicitarCAE(ctx, ventaID, iva, total, venta.Items, 0, arca.TipoDocConsumidorFinal)
 	if err != nil {
 		slog.Error("solicitar CAE ARCA", "err", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "error obteniendo CAE: " + err.Error()})

@@ -33,8 +33,26 @@ type tokenCache struct {
 
 var cache = &tokenCache{}
 
+const mockToken = "MOCK_TOKEN"
+const mockSign  = "MOCK_SIGN"
+
+// EsMockMode devuelve true si los certs no existen y el entorno es testing.
+func EsMockMode(certPath, keyPath, env string) bool {
+	if env == "produccion" {
+		return false
+	}
+	_, errCert := os.Stat(certPath)
+	_, errKey  := os.Stat(keyPath)
+	return os.IsNotExist(errCert) || os.IsNotExist(errKey)
+}
+
 // GetToken devuelve el token vigente o renueva si expiró.
 func GetToken(ctx context.Context, cuit int64, certPath, keyPath, env string) (token, sign string, err error) {
+	if EsMockMode(certPath, keyPath, env) {
+		slog.Warn("ARCA mock activo — certs no encontrados, usando datos falsos para testing")
+		return mockToken, mockSign, nil
+	}
+
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
 

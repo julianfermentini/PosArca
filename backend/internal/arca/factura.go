@@ -41,8 +41,20 @@ type ResultadoCAE struct {
 	QRData string // base64 para el QR
 }
 
+// mockCAE devuelve un resultado falso para desarrollo sin certs reales.
+func mockCAE(params SolicitarCAEParams) *ResultadoCAE {
+	fakeCAE := fmt.Sprintf("7%013d", params.NroComprobante)
+	vto := time.Now().AddDate(0, 0, 10)
+	qr, _ := buildQR(params, params.NroComprobante, 0)
+	slog.Warn("ARCA mock — CAE falso generado", "cae", fakeCAE, "nro", params.NroComprobante)
+	return &ResultadoCAE{CAE: fakeCAE, FchVto: vto, NroCmp: params.NroComprobante, QRData: qr}
+}
+
 // SolicitarCAE pide el CAE a AFIP/ARCA vía WSFE.
 func SolicitarCAE(ctx context.Context, params SolicitarCAEParams, token, sign, env string) (*ResultadoCAE, error) {
+	if token == mockToken {
+		return mockCAE(params), nil
+	}
 	url := wsfeURLTesting
 	if env == "produccion" {
 		url = wsfeURLProduccion

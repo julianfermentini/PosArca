@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useVentaStore } from '../stores/ventaStore'
 import { useSyncStore } from '../stores/syncStore'
+import { useProductosStore, type Producto } from '../stores/productosStore'
 import { NumericKeypad } from '../components/features/venta/NumericKeypad'
 import { ItemList } from '../components/features/venta/ItemList'
 import { FacturaModal, type DatosFactura } from '../components/features/factura/FacturaModal'
@@ -19,14 +20,15 @@ type ConfirmState =
 export default function VentaPage() {
   const store = useVentaStore()
   const sync = useSyncStore()
+  const { productos } = useProductosStore()
 
   const [paso, setPaso] = useState<Paso>('descripcion')
   const [mostrarFacturaModal, setMostrarFacturaModal] = useState(false)
   const [confirmacion, setConfirmacion] = useState<ConfirmState>(null)
+  const [ticketOk, setTicketOk] = useState<{ numero: string; total: number } | null>(null)
   const [cargando, setCargando] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
 
-  // Detectar online/offline
   useEffect(() => {
     const handleOnline  = () => sync.setOnline(true)
     const handleOffline = () => sync.setOnline(false)
@@ -39,8 +41,10 @@ export default function VentaPage() {
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const puedeAgregar = store.descripcionActual.trim() && parseFloat(store.precioActual) > 0
-  const puedeEmitir  = store.carrito.length > 0 && store.metodoPago
+  const puedeAgregar = paso === 'precio'
+    ? store.descripcionActual.trim() && parseFloat(store.precioActual) > 0
+    : store.descripcionActual.trim()
+  const puedeEmitir = store.carrito.length > 0 && store.metodoPago
 
   const handleAgregarItem = useCallback(() => {
     if (!puedeAgregar) return
@@ -51,6 +55,22 @@ export default function VentaPage() {
     store.agregarItem()
     setPaso('descripcion')
   }, [paso, puedeAgregar, store])
+
+  const handleProductoClick = useCallback((producto: Producto) => {
+    if (producto.precio !== null) {
+      store.agregarItemDirecto(producto.nombre, producto.precio)
+    } else {
+      store.setDescripcion(producto.nombre)
+      setPaso('precio')
+    }
+  }, [store])
+
+  const mostrarBannerTicket = (numero: string, total: number) => {
+    store.limpiarCarrito()
+    setPaso('descripcion')
+    setTicketOk({ numero, total })
+    setTimeout(() => setTicketOk(null), 3000)
+  }
 
   const emitirTicket = async () => {
     if (!puedeEmitir || cargando) return
@@ -64,30 +84,28 @@ export default function VentaPage() {
     }
 
     if (!sync.online) {
-      // Guardar offline
+      const total = store.getTotal()
       const venta: VentaOffline = {
         id: generarUUID(),
         tipo: 'TICKET',
         items: payload.items,
         subtotal: store.getSubtotal(),
         iva: store.getIVA(),
-        total: store.getTotal(),
+        total,
         metodo_pago: store.metodoPago!,
         created_at: new Date().toISOString(),
         estado_sync: 'PENDIENTE',
       }
       await sync.guardarOffline(venta)
-      setConfirmacion({ tipo: 'ticket', numero: 'OFFLINE', total: store.getTotal() })
-      store.limpiarCarrito()
       setCargando(false)
+      mostrarBannerTicket('OFFLINE', total)
       return
     }
 
     try {
       const { data } = await ventasApi.crear(payload)
       if (data.success && data.data) {
-        setConfirmacion({ tipo: 'ticket', numero: data.data.numero, total: data.data.total })
-        store.limpiarCarrito()
+        mostrarBannerTicket(data.data.numero, data.data.total)
       }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Error al emitir ticket'
@@ -118,7 +136,6 @@ export default function VentaPage() {
     store.limpiarCarrito()
   }
 
-  // Pantalla de confirmación post-venta
   if (confirmacion) {
     return (
       <div className="h-full flex flex-col items-center justify-center bg-green-50 p-8 gap-6">
@@ -148,7 +165,7 @@ export default function VentaPage() {
   return (
     <div className="h-full flex bg-gray-50 overflow-hidden">
       {/* Panel izquierdo: entrada de items */}
-      <div className="flex flex-col w-[340px] bg-white border-r border-gray-200 p-4 gap-4 flex-shrink-0">
+      <div className="flex flex-col w-[340px] bg-white border-r border-gray-200 p-4 gap-4 flex-shrink-0 overflow-y-auto">
         {/* Badge offline */}
         {(!sync.online || sync.pendientes > 0) && (
           <div className={`rounded-xl px-3 py-2 text-sm font-semibold flex items-center gap-2
@@ -160,10 +177,10 @@ export default function VentaPage() {
           </div>
         )}
 
-        {/* Descripción */}
+        {/* Descripción / Precio */}
         <div>
           <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">
-            {paso === 'descripcion' ? '1. Descripción' : '2. Precio (neto sin IVA)'}
+            {paso === 'descripcion' ? '1. Descripción' : '2. Precio final (IVA incluido)'}
           </label>
           <div className="border-2 border-gray-200 rounded-xl bg-gray-50 px-4 py-3 min-h-[56px] flex items-center">
             {paso === 'descripcion' ? (
@@ -189,34 +206,65 @@ export default function VentaPage() {
           </div>
         </div>
 
-        {/* Teclado numérico */}
+        {/* Teclado numérico o botones de acceso rápido */}
         {paso === 'precio' ? (
-          <NumericKeypad
-            value={store.precioActual}
-            onChange={store.setPrecio}
-            onConfirm={() => {
-              store.agregarItem()
-              setPaso('descripcion')
-            }}
-          />
+          <>
+            <NumericKeypad
+              value={store.precioActual}
+              onChange={store.setPrecio}
+              onConfirm={() => {
+                store.agregarItem()
+                setPaso('descripcion')
+              }}
+            />
+            <button
+              onClick={() => { setPaso('descripcion'); store.setPrecio('') }}
+              className="text-sm text-gray-500 hover:text-gray-700 text-center py-1"
+            >
+              ← Volver a descripción
+            </button>
+          </>
         ) : (
-          <Button
-            size="lg"
-            fullWidth
-            disabled={!store.descripcionActual.trim()}
-            onClick={() => store.descripcionActual.trim() && setPaso('precio')}
-          >
-            Siguiente → Precio
-          </Button>
-        )}
+          <>
+            {/* Botones de productos preconfigurados */}
+            {productos.length > 0 && (
+              <div>
+                <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">
+                  Acceso rápido
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  {productos.map((p) => (
+                    <button
+                      key={p.id}
+                      onPointerDown={(e) => { e.preventDefault(); handleProductoClick(p) }}
+                      className="
+                        flex flex-col items-start px-3 py-2 rounded-xl border-2 border-gray-200
+                        bg-white hover:border-blue-400 hover:bg-blue-50
+                        active:scale-95 transition-all touch-manipulation text-left
+                      "
+                    >
+                      <span className="font-semibold text-gray-900 text-sm leading-tight truncate w-full">
+                        {p.nombre}
+                      </span>
+                      <span className="text-xs text-gray-500 mt-0.5">
+                        {p.precio !== null ? formatPrecio(p.precio) : 'Precio libre'}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
-        {paso === 'precio' && (
-          <button
-            onClick={() => { setPaso('descripcion'); store.setPrecio('') }}
-            className="text-sm text-gray-500 hover:text-gray-700 text-center py-1"
-          >
-            ← Volver a descripción
-          </button>
+            {/* Botón manual: confirmar descripción e ir a precio */}
+            <Button
+              size="lg"
+              fullWidth
+              disabled={!store.descripcionActual.trim()}
+              onClick={() => store.descripcionActual.trim() && setPaso('precio')}
+            >
+              Ingresar precio →
+            </Button>
+          </>
         )}
       </div>
 
@@ -240,6 +288,16 @@ export default function VentaPage() {
           <ItemList items={store.carrito} onEliminar={store.eliminarItem} />
         </div>
 
+        {ticketOk && (
+          <div className="mt-3 bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-xl text-sm font-semibold flex items-center gap-2">
+            <span className="text-lg">✓</span>
+            <span>
+              Ticket emitido
+              {ticketOk.numero !== 'OFFLINE' ? ` Nro ${ticketOk.numero}` : ' (offline)'}
+              {' — '}{formatPrecio(ticketOk.total)}
+            </span>
+          </div>
+        )}
         {errorMsg && (
           <p className="mt-3 bg-red-50 text-red-600 px-4 py-3 rounded-xl text-sm font-medium">
             {errorMsg}
@@ -249,7 +307,6 @@ export default function VentaPage() {
 
       {/* Panel derecho: totales y acciones */}
       <div className="flex flex-col w-[280px] bg-white border-l border-gray-200 p-4 gap-4 flex-shrink-0">
-        {/* Totales */}
         <div className="bg-gray-50 rounded-2xl p-4 space-y-2">
           <div className="flex justify-between text-gray-600">
             <span>Subtotal neto</span>
@@ -265,7 +322,6 @@ export default function VentaPage() {
           </div>
         </div>
 
-        {/* Método de pago */}
         <div>
           <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">
             Método de Pago
@@ -291,7 +347,6 @@ export default function VentaPage() {
           </div>
         </div>
 
-        {/* Botones de acción */}
         <div className="flex flex-col gap-3 mt-auto">
           <Button
             variant="primary"

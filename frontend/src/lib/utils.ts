@@ -32,10 +32,17 @@ export function generarUUID(): string {
   return crypto.randomUUID()
 }
 
+// El precio que ingresa el usuario ya tiene IVA incluido.
+// Estas funciones reciben precio_neto (ya calculado) como siempre.
 export function calcularIVA(precioNeto: number): number {
   return Math.round(precioNeto * 0.21 * 100) / 100
 }
 
 export function calcularTotal(precioNeto: number): number {
   return Math.round(precioNeto * 1.21 * 100) / 100
+}
+
+// Dada la precio final con IVA incluido, devuelve el neto.
+export function calcularNeto(precioFinal: number): number {
+  return Math.round((precioFinal / 1.21) * 100) / 100
 }
