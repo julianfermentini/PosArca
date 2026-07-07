@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/json"
 	"encoding/pem"
 	"encoding/xml"
 	"fmt"
@@ -17,6 +18,40 @@ import (
 
 	"go.mozilla.org/pkcs7"
 )
+
+const tokenCacheFile = "/app/token_cache.json"
+
+type tokenDisk struct {
+	Token      string    `json:"token"`
+	Sign       string    `json:"sign"`
+	Expiration time.Time `json:"expiration"`
+}
+
+func loadTokenFromDisk() {
+	data, err := os.ReadFile(tokenCacheFile)
+	if err != nil {
+		return
+	}
+	var td tokenDisk
+	if err := json.Unmarshal(data, &td); err != nil {
+		return
+	}
+	if time.Now().Before(td.Expiration) {
+		cache.token = td.Token
+		cache.sign = td.Sign
+		cache.expiration = td.Expiration
+		slog.Info("token ARCA cargado desde disco", "expira", td.Expiration.Format(time.RFC3339))
+	}
+}
+
+func saveTokenToDisk(token, sign string, expiration time.Time) {
+	td := tokenDisk{Token: token, Sign: sign, Expiration: expiration}
+	data, err := json.Marshal(td)
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(tokenCacheFile, data, 0600)
+}
 
 const (
 	wsaaURLTesting    = "https://wsaahomo.afip.gov.ar/ws/services/LoginCms"
@@ -56,6 +91,11 @@ func GetToken(ctx context.Context, cuit int64, certPath, keyPath, env string) (t
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
 
+	// Intentar cargar desde disco si la memoria está vacía
+	if cache.token == "" {
+		loadTokenFromDisk()
+	}
+
 	if time.Now().Before(cache.expiration) {
 		return cache.token, cache.sign, nil
 	}
@@ -66,9 +106,11 @@ func GetToken(ctx context.Context, cuit int64, certPath, keyPath, env string) (t
 		return "", "", fmt.Errorf("login AFIP: %w", err)
 	}
 
+	exp := time.Now().Add(11 * time.Hour)
 	cache.token = token
 	cache.sign = sign
-	cache.expiration = time.Now().Add(11 * time.Hour) // renovar 1h antes de expirar
+	cache.expiration = exp
+	saveTokenToDisk(token, sign, exp)
 
 	return token, sign, nil
 }
@@ -140,7 +182,6 @@ func signTRA(tra []byte, certPath, keyPath string) (string, error) {
 	if err := signed.AddSigner(cert, key, pkcs7.SignerInfoConfig{}); err != nil {
 		return "", fmt.Errorf("agregar firmante: %w", err)
 	}
-	signed.Detach()
 
 	der, err := signed.Finish()
 	if err != nil {
@@ -188,10 +229,22 @@ func callWSAA(ctx context.Context, cms, env string) (*TicketAcceso, error) {
 			Response struct {
 				Return string `xml:"loginCmsReturn"`
 			} `xml:"loginCmsResponse"`
+			Fault struct {
+				Code   string `xml:"faultcode"`
+				String string `xml:"faultstring"`
+			} `xml:"Fault"`
 		} `xml:"Body"`
 	}
 	if err := xml.Unmarshal(body, &envelope); err != nil {
-		return nil, fmt.Errorf("parsear respuesta WSAA: %w", err)
+		return nil, fmt.Errorf("parsear respuesta WSAA (body: %s): %w", string(body), err)
+	}
+
+	if envelope.Body.Fault.Code != "" {
+		return nil, fmt.Errorf("SOAP Fault WSAA [%s]: %s", envelope.Body.Fault.Code, envelope.Body.Fault.String)
+	}
+
+	if envelope.Body.Response.Return == "" {
+		return nil, fmt.Errorf("WSAA retornó respuesta vacía (HTTP %d, body: %s)", resp.StatusCode, string(body))
 	}
 
 	var ta TicketAcceso

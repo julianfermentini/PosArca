@@ -7,6 +7,26 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 })
 
+api.interceptors.request.use((config) => {
+  const stored = localStorage.getItem('pos-auth')
+  if (stored) {
+    try {
+      const { state } = JSON.parse(stored)
+      if (state?.token) config.headers.Authorization = `Bearer ${state.token}`
+    } catch {}
+  }
+  return config
+})
+
+export const authApi = {
+  login: (email: string, password: string) =>
+    api.post<ApiResponse<{ token: string; email: string; negocio_nombre: string }>>('/auth/login', { email, password }),
+  register: (email: string, password: string, negocio_nombre: string) =>
+    api.post<ApiResponse<{ token: string; email: string; negocio_nombre: string }>>('/auth/register', { email, password, negocio_nombre }),
+  status: () =>
+    api.get<ApiResponse<{ has_users: boolean }>>('/auth/status'),
+}
+
 export interface CrearVentaPayload {
   tipo: 'TICKET'
   items: ItemRequest[]
@@ -23,7 +43,7 @@ export interface CrearFacturaPayload {
 
 export const ventasApi = {
   crear: (payload: CrearVentaPayload) =>
-    api.post<ApiResponse<{ id: string; numero: string; cae: string; total: number }>>('/ventas', payload),
+    api.post<ApiResponse<{ id: string; numero: string; cae: string; cae_vto: string; total: number }>>('/ventas', payload),
 
   listar: (fecha?: string) =>
     api.get<ApiResponse<Venta[]>>('/ventas', { params: fecha ? { fecha } : {} }),
@@ -45,6 +65,30 @@ export const reportesApi = {
 export const syncApi = {
   sincronizar: (ventas: VentaOffline[]) =>
     api.post<ApiResponse<{ total: number; exitosos: number }>>('/sync/ventas', { ventas }),
+}
+
+export interface Empresa {
+  id?: string
+  razon_social: string
+  cuit: string
+  punto_venta: number
+  direccion: string
+  telefono: string
+  condicion_iva: string
+}
+
+export interface UpdateEmpresaPayload {
+  razon_social: string
+  direccion: string
+  telefono: string
+  condicion_iva: string
+}
+
+export const empresaApi = {
+  get: () =>
+    api.get<ApiResponse<Empresa>>('/empresa'),
+  update: (payload: UpdateEmpresaPayload) =>
+    api.put<ApiResponse<Empresa>>('/empresa', payload),
 }
 
 export default api

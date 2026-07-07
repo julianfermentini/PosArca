@@ -24,12 +24,21 @@ services:
     env_file:
       - .env
     environment:
-      - DATABASE_URL=postgresql://posarca:posarca_dev@postgres:5432/posarca
+      - DATABASE_URL=postgresql://posarca:posarca_dev@postgres:5432/posarca?sslmode=disable
     volumes:
       # Montar certs en desarrollo local — NUNCA en repo
       - ./certs:/app/certs:ro
+    # ── Impresora térmica (solo Linux/Raspberry Pi) ──────────────────────────
+    # Descomentar cuando el backend corre en Linux con la impresora conectada.
+    # El nombre del dispositivo puede variar: /dev/ttyUSB0, /dev/usb/lp0, etc.
+    # En el host Linux también hay que agregar el usuario al grupo dialout:
+    #   sudo usermod -aG dialout $USER
+    #
+    # devices:
+    #   - /dev/ttyUSB0:/dev/ttyUSB0
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
 
   postgres:
     image: postgres:16-alpine
@@ -41,6 +50,11 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U posarca -d posarca"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
 volumes:
   pgdata:

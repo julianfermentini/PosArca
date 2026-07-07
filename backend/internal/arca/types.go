@@ -73,8 +73,8 @@ const (
 
 // Tipo de documento receptor
 const (
-	TipoDocCUIT    = 80 // CUIT
-	TipoDocConsumidorFinal = 96 // Sin doc / consumidor final
+	TipoDocCUIT            = 80 // CUIT
+	TipoDocConsumidorFinal = 99 // Sin identificar / consumidor final
 )
 
 type FEAuthRequest struct {

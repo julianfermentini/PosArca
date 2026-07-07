@@ -75,6 +75,12 @@ func (imp *Impresora) cerrar() {
 	}
 }
 
+// EstaConfigurada indica si hay un puerto serial definido.
+// Si es false, la impresión la maneja el frontend (tablet Android vía WebUSB/Bluetooth).
+func (imp *Impresora) EstaConfigurada() bool {
+	return imp.cfg.Name != ""
+}
+
 // Cerrar cierra el puerto serial. Llamar al apagar el servidor.
 func (imp *Impresora) Cerrar() {
 	imp.mu.Lock()

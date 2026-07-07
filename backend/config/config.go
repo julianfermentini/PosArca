@@ -21,6 +21,11 @@ type Config struct {
 	SMTPPort       int
 	SMTPUser       string
 	SMTPPass       string
+	SMTPFromName   string
+	NegocioNombre  string
+	NegocioDirec   string
+	NegocioTel     string
+	NegocioIVACond string
 	PrinterPort    string
 	PrinterBaud    int
 	Port           string
@@ -48,6 +53,11 @@ func Load() *Config {
 		SMTPPort:       smtpPort,
 		SMTPUser:       getEnv("SMTP_USER", ""),
 		SMTPPass:       getEnv("SMTP_PASS", ""),
+		SMTPFromName:   getEnv("SMTP_FROM_NAME", "PosArca Fiscal"),
+		NegocioNombre:  getEnv("NEGOCIO_NOMBRE", "Mi Negocio"),
+		NegocioDirec:   getEnv("NEGOCIO_DIRECCION", ""),
+		NegocioTel:     getEnv("NEGOCIO_TEL", ""),
+		NegocioIVACond: getEnv("NEGOCIO_IVA_COND", "Responsable Inscripto"),
 		PrinterPort:    getEnv("PRINTER_PORT", "/dev/ttyUSB0"),
 		PrinterBaud:    printerBaud,
 		Port:           getEnv("PORT", "8080"),

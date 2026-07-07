@@ -22,8 +22,8 @@ const (
 // Los ítems y montos viven en venta_items — esta tabla no almacena totales.
 type Venta struct {
 	ID           uuid.UUID       `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
-	Tipo         TipoComprobante `gorm:"not null" json:"tipo"`
-	Numero       string          `gorm:"uniqueIndex" json:"numero,omitempty"`
+	Tipo         TipoComprobante `gorm:"not null;uniqueIndex:idx_ventas_tipo_numero" json:"tipo"`
+	Numero       string          `gorm:"uniqueIndex:idx_ventas_tipo_numero" json:"numero,omitempty"`
 	MetodoPago   MetodoPago      `gorm:"not null" json:"metodo_pago"`
 	Impreso      bool            `gorm:"default:false" json:"impreso"`
 	Sincronizado bool            `gorm:"default:false" json:"sincronizado"`

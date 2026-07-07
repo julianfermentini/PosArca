@@ -157,34 +157,37 @@ func (h *VentasHandler) solicitarCAE(
 	}
 
 	tipoCmp := arca.TipoFacturaB
+	condIVA := 5 // Consumidor Final
 	if docTipo == arca.TipoDocCUIT {
 		tipoCmp = arca.TipoFacturaA
-	}
-
-	nro, err := siguienteNroAFIP(h.db, tipoCmp)
-	if err != nil {
-		return nil, err
+		condIVA = 1 // IVA Responsable Inscripto
 	}
 
 	subtotal := total - iva
 
 	params := arca.SolicitarCAEParams{
-		CUIT:           cuitInt,
-		PuntoVenta:     h.cfg.ArcaPuntoVenta,
-		TipoCmp:        tipoCmp,
-		NroComprobante: nro,
-		Fecha:          time.Now(),
-		Subtotal:       subtotal,
-		IVA:            iva,
-		Total:          total,
-		DocTipoRec:     docTipo,
-		DocNroRec:      docNro,
+		CUIT:                   cuitInt,
+		PuntoVenta:             h.cfg.ArcaPuntoVenta,
+		TipoCmp:                tipoCmp,
+		Fecha:                  time.Now(),
+		Subtotal:               subtotal,
+		IVA:                    iva,
+		Total:                  total,
+		DocTipoRec:             docTipo,
+		DocNroRec:              docNro,
+		CondicionIVAReceptorId: condIVA,
 	}
 
 	return arca.SolicitarCAE(ctx, params, token, sign, h.cfg.ArcaEnv)
 }
 
 func (h *VentasHandler) imprimirTicket(venta models.Venta, cae *arca.ResultadoCAE) {
+	// En producción con tablet Android la impresión la maneja el frontend vía WebUSB/WebBluetooth.
+	// Esta función solo imprime si hay un puerto serial configurado (despliegue Linux/Raspberry Pi).
+	if !h.impresora.EstaConfigurada() {
+		return
+	}
+
 	var ticketItems []impresora.ItemTicket
 	for _, it := range venta.Items {
 		ticketItems = append(ticketItems, impresora.ItemTicket{
@@ -195,9 +198,10 @@ func (h *VentasHandler) imprimirTicket(venta models.Venta, cae *arca.ResultadoCA
 	}
 
 	subtotal, iva, total := models.TotalesDeItems(venta.Items)
+	emp := getEmpresaConf(h.db, h.cfg)
 
 	datos := impresora.DatosTicket{
-		RazonSocial: "Bar/Restaurante",
+		RazonSocial: emp.RazonSocial,
 		CUIT:        h.cfg.ArcaCUIT,
 		PuntoVenta:  h.cfg.ArcaPuntoVenta,
 		TipoCmp:     string(venta.Tipo),
@@ -240,8 +244,3 @@ func parseCUIT(cuit string) int64 {
 	return result
 }
 
-func siguienteNroAFIP(db *gorm.DB, tipoCmp int) (int64, error) {
-	var count int64
-	db.Model(&models.Venta{}).Count(&count)
-	return count + 1, nil
-}

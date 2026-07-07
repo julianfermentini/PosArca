@@ -8,6 +8,7 @@ import (
 	"pos-fiscal/internal/email"
 	"pos-fiscal/internal/handlers"
 	"pos-fiscal/internal/impresora"
+	"pos-fiscal/internal/middleware"
 )
 
 func SetupRouter(db *gorm.DB, cfg *config.Config, imp *impresora.Impresora, emailCli *email.Cliente) *gin.Engine {
@@ -17,23 +18,38 @@ func SetupRouter(db *gorm.DB, cfg *config.Config, imp *impresora.Impresora, emai
 
 	api := r.Group("/api")
 	{
-		ventas := handlers.NuevoVentasHandler(db, cfg, imp)
-		api.POST("/ventas", ventas.Crear)
-		api.GET("/ventas", ventas.Listar)
-
-		facturas := handlers.NuevoFacturasHandler(db, cfg, imp, emailCli)
-		api.POST("/facturas", facturas.Crear)
-		api.GET("/facturas", facturas.Listar)
-
-		reportes := handlers.NuevoReportesHandler(db)
-		api.GET("/reportes/cierre", reportes.CierreCaja)
-
-		syncH := handlers.NuevoSyncHandler(db, cfg)
-		api.POST("/sync/ventas", syncH.SincronizarVentas)
+		// Rutas públicas
+		auth := handlers.NuevoAuthHandler(db)
+		api.POST("/auth/register", auth.Register)
+		api.POST("/auth/login", auth.Login)
+		api.GET("/auth/status", auth.HasUsers)
 
 		api.GET("/health", func(c *gin.Context) {
 			c.JSON(200, gin.H{"status": "ok"})
 		})
+
+		// Rutas protegidas
+		protected := api.Group("/")
+		protected.Use(middleware.AuthRequired())
+		{
+			ventas := handlers.NuevoVentasHandler(db, cfg, imp)
+			protected.POST("/ventas", ventas.Crear)
+			protected.GET("/ventas", ventas.Listar)
+
+			facturas := handlers.NuevoFacturasHandler(db, cfg, imp, emailCli)
+			protected.POST("/facturas", facturas.Crear)
+			protected.GET("/facturas", facturas.Listar)
+
+			reportes := handlers.NuevoReportesHandler(db)
+			protected.GET("/reportes/cierre", reportes.CierreCaja)
+
+			syncH := handlers.NuevoSyncHandler(db, cfg)
+			protected.POST("/sync/ventas", syncH.SincronizarVentas)
+
+			empresa := handlers.NuevoEmpresaHandler(db, cfg)
+			protected.GET("/empresa", empresa.Get)
+			protected.PUT("/empresa", empresa.Update)
+		}
 	}
 
 	return r
@@ -42,7 +58,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config, imp *impresora.Impresora, emai
 func corsMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Header("Access-Control-Allow-Origin", "*")
-		c.Header("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS")
+		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(204)

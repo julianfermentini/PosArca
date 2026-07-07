@@ -20,18 +20,19 @@ const (
 )
 
 type SolicitarCAEParams struct {
-	CUIT        int64
-	PuntoVenta  int
-	TipoCmp     int
+	CUIT           int64
+	PuntoVenta     int
+	TipoCmp        int
 	NroComprobante int64
-	Fecha       time.Time
+	Fecha          time.Time
 	// Montos en pesos argentinos, IVA 21%
-	Subtotal    float64
-	IVA         float64
-	Total       float64
-	// Para facturas A: datos del receptor
-	DocTipoRec  int
-	DocNroRec   int64
+	Subtotal float64
+	IVA      float64
+	Total    float64
+	// Datos del receptor
+	DocTipoRec              int
+	DocNroRec               int64
+	CondicionIVAReceptorId  int // 5=Consumidor Final, 1=Resp. Inscripto
 }
 
 type ResultadoCAE struct {
@@ -59,6 +60,12 @@ func SolicitarCAE(ctx context.Context, params SolicitarCAEParams, token, sign, e
 	if env == "produccion" {
 		url = wsfeURLProduccion
 	}
+
+	ultimo, err := feCompUltimoAutorizado(ctx, url, token, sign, params.CUIT, params.PuntoVenta, params.TipoCmp)
+	if err != nil {
+		return nil, fmt.Errorf("FECompUltimoAutorizado: %w", err)
+	}
+	params.NroComprobante = ultimo + 1
 
 	fechaStr := params.Fecha.Format("20060102")
 	nro := params.NroComprobante
@@ -138,6 +145,7 @@ func buildFECAESolicitarSOAP(p SolicitarCAEParams, token, sign, fecha string, nr
             <ar:ImpTrib>0</ar:ImpTrib>
             <ar:MonId>PES</ar:MonId>
             <ar:MonCotiz>1</ar:MonCotiz>
+            <ar:CondicionIVAReceptorId>%d</ar:CondicionIVAReceptorId>
             <ar:Iva>
               <ar:AlicIva>
                 <ar:Id>5</ar:Id>
@@ -156,8 +164,68 @@ func buildFECAESolicitarSOAP(p SolicitarCAEParams, token, sign, fecha string, nr
 		p.DocTipoRec, p.DocNroRec,
 		nro, nro, fecha,
 		p.Total, p.Subtotal, p.IVA,
+		p.CondicionIVAReceptorId,
 		p.Subtotal, p.IVA,
 	)
+}
+
+func feCompUltimoAutorizado(ctx context.Context, url, token, sign string, cuit int64, ptoVta, cbteTipo int) (int64, error) {
+	soap := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ar="http://ar.gov.afip.dif.FEV1/">
+  <soapenv:Body>
+    <ar:FECompUltimoAutorizado>
+      <ar:Auth>
+        <ar:Token>%s</ar:Token>
+        <ar:Sign>%s</ar:Sign>
+        <ar:Cuit>%d</ar:Cuit>
+      </ar:Auth>
+      <ar:PtoVta>%d</ar:PtoVta>
+      <ar:CbteTipo>%d</ar:CbteTipo>
+    </ar:FECompUltimoAutorizado>
+  </soapenv:Body>
+</soapenv:Envelope>`, token, sign, cuit, ptoVta, cbteTipo)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBufferString(soap))
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("Content-Type", "text/xml; charset=utf-8")
+	req.Header.Set("SOAPAction", "http://ar.gov.afip.dif.FEV1/FECompUltimoAutorizado")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("HTTP: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return 0, err
+	}
+
+	var envelope struct {
+		Body struct {
+			Response struct {
+				Result struct {
+					CbteNro int64  `xml:"CbteNro"`
+					Errors  []struct {
+						Code int    `xml:"Code"`
+						Msg  string `xml:"Msg"`
+					} `xml:"Errors>Err"`
+				} `xml:"FECompUltimoAutorizadoResult"`
+			} `xml:"FECompUltimoAutorizadoResponse"`
+		} `xml:"Body"`
+	}
+	if err := xml.Unmarshal(body, &envelope); err != nil {
+		return 0, fmt.Errorf("parsear respuesta: %w", err)
+	}
+
+	res := envelope.Body.Response.Result
+	if len(res.Errors) > 0 {
+		return 0, fmt.Errorf("AFIP error [%d]: %s", res.Errors[0].Code, res.Errors[0].Msg)
+	}
+
+	return res.CbteNro, nil
 }
 
 func parseCAEResponse(body []byte) (cae, fchVto string, err error) {
