@@ -20,6 +20,7 @@ export const useEmpresaStore = create<EmpresaStore>()(
           const r = await empresaApi.get()
           if (r.data.success) {
             const emp = r.data.data
+            if (!emp) return
             set({ empresa: emp, configurada: !!emp.razon_social })
           }
         } catch {}
@@ -33,7 +34,9 @@ export const useEmpresaStore = create<EmpresaStore>()(
           condicion_iva: datos.condicion_iva,
         })
         if (r.data.success) {
-          set({ empresa: r.data.data, configurada: !!r.data.data.razon_social })
+          const data = r.data.data
+          if (!data) return
+          set({ empresa: data, configurada: !!data.razon_social })
         }
       },
     }),

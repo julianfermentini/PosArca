@@ -36,7 +36,7 @@ function SectionTitle({ children, sub }: { children: React.ReactNode; sub?: stri
 
 // ─── Impresora section ────────────────────────────────────────────────────────
 function SeccionImpresora() {
-  const { tipo, nombre, conectado, error, conectarUSB, conectarBluetooth, desconectar, clearError } = usePrinterStore()
+  const { nombre, conectado, error, conectarUSB, conectarBluetooth, desconectar, clearError } = usePrinterStore()
 
   const webUSBOk = 'usb' in navigator
   const webBTOk  = 'bluetooth' in navigator

@@ -114,7 +114,7 @@ export interface PrinterInfo {
   nombre: string
 }
 
-let usbDevice: USBDevice | null = null
+let usbDevice: any = null
 let usbEndpoint = 0
 
 export async function conectarUSB(): Promise<PrinterInfo> {
@@ -133,7 +133,7 @@ export async function conectarUSB(): Promise<PrinterInfo> {
   let claimed = false
   for (const iface of device.configuration!.interfaces) {
     for (const alt of iface.alternates) {
-      const ep = alt.endpoints.find((e: USBEndpoint) => e.direction === 'out' && e.type === 'bulk')
+      const ep = alt.endpoints.find((e: any) => e.direction === 'out' && e.type === 'bulk')
       if (ep) {
         await device.claimInterface(iface.interfaceNumber)
         usbEndpoint = ep.endpointNumber
@@ -179,13 +179,13 @@ const BT_CHARS_WRITE = [
   '49535343-1e4d-4bd9-ba61-23c647249616', // Microchip TX
 ]
 
-let btChar: BluetoothRemoteGATTCharacteristic | null = null
-let btDevice: BluetoothDevice | null = null
+let btChar: any = null
+let btDevice: any = null
 
 export async function conectarBluetooth(): Promise<PrinterInfo> {
   if (!('bluetooth' in navigator)) throw new Error('Web Bluetooth no disponible en este navegador')
 
-  const device: BluetoothDevice = await (navigator as any).bluetooth.requestDevice({
+  const device = await (navigator as any).bluetooth.requestDevice({
     acceptAllDevices: true,
     optionalServices: BT_SERVICES,
   })
