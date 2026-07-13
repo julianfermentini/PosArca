@@ -24,7 +24,15 @@ export const useProductosStore = create<ProductosState>()(
       cargar: async () => {
         try {
           const r = await productosApi.listar()
-          if (r.data.success && r.data.data) {
+          if (!r.data.success || !r.data.data) return
+
+          if (r.data.data.length === 0 && get().productos.length > 0) {
+            // Migrar productos de localStorage a la BD (una sola vez)
+            const locales = get().productos
+            await Promise.all(locales.map(p => productosApi.crear(p.nombre, p.precio).catch(() => null)))
+            const r2 = await productosApi.listar()
+            if (r2.data.success && r2.data.data) set({ productos: r2.data.data })
+          } else {
             set({ productos: r.data.data })
           }
         } catch {}
