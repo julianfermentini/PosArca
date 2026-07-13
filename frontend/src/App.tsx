@@ -88,7 +88,7 @@ export default function App() {
               </span>
             )}
             {online && pendientes === 0 && (
-              <span className="text-xs hidden md:block" style={{ color: '#4B5563' }}>● Online</span>
+              <span className="text-xs font-medium" style={{ color: '#4ADE80' }}>● Online</span>
             )}
             <span className="text-xs md:text-sm font-medium truncate max-w-[100px] md:max-w-none" style={{ color: '#D1D5DB' }}>
               {displayName}
