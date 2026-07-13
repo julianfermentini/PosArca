@@ -29,11 +29,9 @@ func main() {
 	defer imp.Cerrar()
 
 	emailCli := email.NuevoCliente(email.Config{
-		Host:     cfg.SMTPHost,
-		Port:     cfg.SMTPPort,
-		User:     cfg.SMTPUser,
-		Pass:     cfg.SMTPPass,
-		FromName: cfg.SMTPFromName,
+		ResendAPIKey: cfg.ResendAPIKey,
+		FromEmail:    cfg.ResendFromEmail,
+		FromName:     cfg.SMTPFromName,
 	})
 
 	router := api.SetupRouter(database, cfg, imp, emailCli)

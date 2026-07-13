@@ -17,10 +17,8 @@ type Config struct {
 	ArcaKeyPath    string
 	ArcaEnv        string
 	ArcaPuntoVenta int
-	SMTPHost       string
-	SMTPPort       int
-	SMTPUser       string
-	SMTPPass       string
+	ResendAPIKey   string
+	ResendFromEmail string
 	SMTPFromName   string
 	NegocioNombre  string
 	NegocioDirec   string
@@ -36,7 +34,6 @@ func Load() *Config {
 		slog.Info("sin archivo .env, usando variables de entorno del sistema")
 	}
 
-	smtpPort, _ := strconv.Atoi(getEnv("SMTP_PORT", "587"))
 	printerBaud, _ := strconv.Atoi(getEnv("PRINTER_BAUD", "9600"))
 	puntoVenta, _ := strconv.Atoi(getEnv("ARCA_PUNTO_VENTA", "1"))
 
@@ -49,11 +46,9 @@ func Load() *Config {
 		ArcaKeyPath:    mustGetEnv("ARCA_KEY_PATH"),
 		ArcaEnv:        getEnv("ARCA_ENV", "testing"),
 		ArcaPuntoVenta: puntoVenta,
-		SMTPHost:       getEnv("SMTP_HOST", "smtp.gmail.com"),
-		SMTPPort:       smtpPort,
-		SMTPUser:       getEnv("SMTP_USER", ""),
-		SMTPPass:       getEnv("SMTP_PASS", ""),
-		SMTPFromName:   getEnv("SMTP_FROM_NAME", "PosArca Fiscal"),
+		ResendAPIKey:    getEnv("RESEND_API_KEY", ""),
+		ResendFromEmail: getEnv("RESEND_FROM_EMAIL", "onboarding@resend.dev"),
+		SMTPFromName:    getEnv("SMTP_FROM_NAME", "PosArca Fiscal"),
 		NegocioNombre:  getEnv("NEGOCIO_NOMBRE", "Mi Negocio"),
 		NegocioDirec:   getEnv("NEGOCIO_DIRECCION", ""),
 		NegocioTel:     getEnv("NEGOCIO_TEL", ""),

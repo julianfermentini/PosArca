@@ -1,29 +1,33 @@
 package email
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"log/slog"
-	"net/smtp"
+	"net/http"
 	"strings"
 	"time"
 )
 
 type Config struct {
-	Host     string
-	Port     int
-	User     string
-	Pass     string
-	FromName string
+	ResendAPIKey string
+	FromName     string
+	FromEmail    string
 }
 
 type Cliente struct {
-	cfg Config
+	cfg  Config
+	http *http.Client
 }
 
 func NuevoCliente(cfg Config) *Cliente {
-	return &Cliente{cfg: cfg}
+	return &Cliente{
+		cfg:  cfg,
+		http: &http.Client{Timeout: 15 * time.Second},
+	}
 }
 
 type DatosFactura struct {
@@ -32,38 +36,76 @@ type DatosFactura struct {
 	Numero        string
 	Total         float64
 	CAE           string
-	PDFBytes      []byte // PDF adjunto (nil = sin adjunto)
-	NegocioNombre string // nombre del negocio para el asunto
+	PDFBytes      []byte
+	NegocioNombre string
 }
 
-// EnviarFactura envía el comprobante al email del cliente con PDF adjunto si está disponible.
+type resendAttachment struct {
+	Filename string `json:"filename"`
+	Content  string `json:"content"` // base64
+}
+
+type resendRequest struct {
+	From        string             `json:"from"`
+	To          []string           `json:"to"`
+	Subject     string             `json:"subject"`
+	Text        string             `json:"text"`
+	Attachments []resendAttachment `json:"attachments,omitempty"`
+}
+
 func (c *Cliente) EnviarFactura(ctx context.Context, destinatario string, datos DatosFactura) error {
 	fromName := c.cfg.FromName
 	if fromName == "" {
 		fromName = "PosArca Fiscal"
 	}
-	fromHeader := fmt.Sprintf("%s <%s>", fromName, c.cfg.User)
+	fromEmail := c.cfg.FromEmail
+	if fromEmail == "" {
+		fromEmail = "onboarding@resend.dev"
+	}
 
 	negocio := datos.NegocioNombre
 	if negocio == "" {
 		negocio = fromName
 	}
 	asunto := fmt.Sprintf("Factura N° %s — %s", datos.Numero, negocio)
-	cuerpo := buildCuerpo(datos)
 
-	var msgBytes []byte
-	if len(datos.PDFBytes) > 0 {
-		pdfFilename := fmt.Sprintf("factura_%s.pdf", strings.ReplaceAll(datos.Numero, "-", "_"))
-		msgBytes = buildMIMEWithPDF(fromHeader, destinatario, asunto, cuerpo, datos.PDFBytes, pdfFilename)
-	} else {
-		msgBytes = []byte(buildMIMESimple(fromHeader, destinatario, asunto, cuerpo))
+	payload := resendRequest{
+		From:    fmt.Sprintf("%s <%s>", fromName, fromEmail),
+		To:      []string{destinatario},
+		Subject: asunto,
+		Text:    buildCuerpo(datos),
 	}
 
-	auth := smtp.PlainAuth("", c.cfg.User, c.cfg.Pass, c.cfg.Host)
-	addr := fmt.Sprintf("%s:%d", c.cfg.Host, c.cfg.Port)
+	if len(datos.PDFBytes) > 0 {
+		nombre := fmt.Sprintf("factura_%s.pdf", strings.ReplaceAll(datos.Numero, "-", "_"))
+		payload.Attachments = []resendAttachment{{
+			Filename: nombre,
+			Content:  base64.StdEncoding.EncodeToString(datos.PDFBytes),
+		}}
+	}
 
-	if err := smtp.SendMail(addr, auth, c.cfg.User, []string{destinatario}, msgBytes); err != nil {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshal: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.resend.com/emails", bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("crear request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+c.cfg.ResendAPIKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.http.Do(req)
+	if err != nil {
 		return fmt.Errorf("enviar email: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		var resBody map[string]any
+		json.NewDecoder(resp.Body).Decode(&resBody)
+		return fmt.Errorf("resend error %d: %v", resp.StatusCode, resBody)
 	}
 
 	slog.Info("factura enviada por email", "destinatario", destinatario, "numero", datos.Numero, "pdf", len(datos.PDFBytes) > 0)
@@ -85,57 +127,4 @@ func buildCuerpo(d DatosFactura) string {
 	sb.WriteString("https://serviciosweb.afip.gob.ar/genericos/comprobantes/\n\n")
 	sb.WriteString("Gracias por su compra.\n")
 	return sb.String()
-}
-
-func buildMIMESimple(from, to, subject, body string) string {
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("From: %s\r\n", from))
-	sb.WriteString(fmt.Sprintf("To: %s\r\n", to))
-	sb.WriteString(fmt.Sprintf("Date: %s\r\n", time.Now().Format(time.RFC1123Z)))
-	sb.WriteString(fmt.Sprintf("Subject: %s\r\n", subject))
-	sb.WriteString("MIME-Version: 1.0\r\n")
-	sb.WriteString("Content-Type: text/plain; charset=UTF-8\r\n")
-	sb.WriteString("\r\n")
-	sb.WriteString(body)
-	return sb.String()
-}
-
-func buildMIMEWithPDF(from, to, subject, body string, pdfBytes []byte, pdfFilename string) []byte {
-	boundary := fmt.Sprintf("----PosArcaBoundary%d", time.Now().UnixNano())
-
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("From: %s\r\n", from))
-	sb.WriteString(fmt.Sprintf("To: %s\r\n", to))
-	sb.WriteString(fmt.Sprintf("Date: %s\r\n", time.Now().Format(time.RFC1123Z)))
-	sb.WriteString(fmt.Sprintf("Subject: %s\r\n", subject))
-	sb.WriteString("MIME-Version: 1.0\r\n")
-	sb.WriteString(fmt.Sprintf("Content-Type: multipart/mixed; boundary=\"%s\"\r\n", boundary))
-	sb.WriteString("\r\n")
-
-	// Parte de texto
-	sb.WriteString(fmt.Sprintf("--%s\r\n", boundary))
-	sb.WriteString("Content-Type: text/plain; charset=UTF-8\r\n")
-	sb.WriteString("\r\n")
-	sb.WriteString(body)
-	sb.WriteString("\r\n")
-
-	// Parte PDF
-	sb.WriteString(fmt.Sprintf("--%s\r\n", boundary))
-	sb.WriteString(fmt.Sprintf("Content-Type: application/pdf; name=\"%s\"\r\n", pdfFilename))
-	sb.WriteString("Content-Transfer-Encoding: base64\r\n")
-	sb.WriteString(fmt.Sprintf("Content-Disposition: attachment; filename=\"%s\"\r\n", pdfFilename))
-	sb.WriteString("\r\n")
-
-	encoded := base64.StdEncoding.EncodeToString(pdfBytes)
-	for i := 0; i < len(encoded); i += 76 {
-		end := i + 76
-		if end > len(encoded) {
-			end = len(encoded)
-		}
-		sb.WriteString(encoded[i:end])
-		sb.WriteString("\r\n")
-	}
-
-	sb.WriteString(fmt.Sprintf("--%s--\r\n", boundary))
-	return []byte(sb.String())
 }
