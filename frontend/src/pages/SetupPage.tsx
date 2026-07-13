@@ -13,25 +13,18 @@ export default function SetupPage({ onComplete }: Props) {
   const [telefono, setTel]      = useState('')
   const [condIVA, setCondIVA]   = useState('Responsable Inscripto')
   const [guardando, setGuardando] = useState(false)
-  const [error, setError]       = useState('')
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!nombre.trim()) return
     setGuardando(true)
-    setError('')
-    try {
-      await guardar({
-        razon_social:  nombre.trim(),
-        direccion:     direccion.trim(),
-        telefono:      telefono.trim(),
-        condicion_iva: condIVA,
-      })
-      onComplete()
-    } catch {
-      setError('No se pudo guardar. Revisá la conexión con el servidor.')
-      setGuardando(false)
-    }
+    await guardar({
+      razon_social:  nombre.trim(),
+      direccion:     direccion.trim(),
+      telefono:      telefono.trim(),
+      condicion_iva: condIVA,
+    })
+    onComplete()
   }
 
   const inputCls = 'w-full border border-gray-200 rounded-xl outline-none text-sm transition-all'
@@ -140,11 +133,6 @@ export default function SetupPage({ onComplete }: Props) {
             </select>
           </div>
 
-          {error && (
-            <p className="text-sm rounded-xl text-red-700" style={{ background: '#FEF2F2', padding: '10px 14px' }}>
-              {error}
-            </p>
-          )}
 
           <button
             type="submit"

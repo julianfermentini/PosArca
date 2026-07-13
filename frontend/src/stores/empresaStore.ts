@@ -30,17 +30,30 @@ export const useEmpresaStore = create<EmpresaStore>()(
       },
 
       guardar: async (datos) => {
-        const r = await empresaApi.update({
-          razon_social:  datos.razon_social,
-          direccion:     datos.direccion,
-          telefono:      datos.telefono,
-          condicion_iva: datos.condicion_iva,
+        // Guardar localmente de inmediato para no depender del backend
+        set({
+          empresa: {
+            razon_social:  datos.razon_social,
+            cuit:          get().empresa?.cuit ?? '',
+            punto_venta:   get().empresa?.punto_venta ?? 1,
+            direccion:     datos.direccion,
+            telefono:      datos.telefono,
+            condicion_iva: datos.condicion_iva,
+          },
+          configurada: true,
         })
-        if (r.data.success) {
-          const data = r.data.data
-          if (!data) return
-          set({ empresa: data, configurada: !!data.razon_social })
-        }
+        // Sincronizar con el backend (best-effort)
+        try {
+          const r = await empresaApi.update({
+            razon_social:  datos.razon_social,
+            direccion:     datos.direccion,
+            telefono:      datos.telefono,
+            condicion_iva: datos.condicion_iva,
+          })
+          if (r.data.success && r.data.data) {
+            set({ empresa: r.data.data })
+          }
+        } catch {}
       },
     }),
     {
