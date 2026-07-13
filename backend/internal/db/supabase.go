@@ -49,6 +49,7 @@ func migrar(db *gorm.DB) error {
 		&models.VentaItem{},
 		&models.Factura{},
 		&models.ConfigEmpresa{},
+		&models.Producto{},
 	); err != nil {
 		return err
 	}

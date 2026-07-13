@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { productosApi } from '../lib/api'
 
 export interface Producto {
   id: string
@@ -9,25 +10,65 @@ export interface Producto {
 
 interface ProductosState {
   productos: Producto[]
-  agregar: (nombre: string, precio: number | null) => void
-  editar: (id: string, nombre: string, precio: number | null) => void
-  eliminar: (id: string) => void
+  cargar: () => Promise<void>
+  agregar: (nombre: string, precio: number | null) => Promise<void>
+  editar: (id: string, nombre: string, precio: number | null) => Promise<void>
+  eliminar: (id: string) => Promise<void>
 }
 
 export const useProductosStore = create<ProductosState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       productos: [],
-      agregar: (nombre, precio) =>
-        set((s) => ({
-          productos: [...s.productos, { id: crypto.randomUUID(), nombre: nombre.trim(), precio }],
-        })),
-      editar: (id, nombre, precio) =>
-        set((s) => ({
-          productos: s.productos.map((p) => (p.id === id ? { ...p, nombre: nombre.trim(), precio } : p)),
-        })),
-      eliminar: (id) =>
-        set((s) => ({ productos: s.productos.filter((p) => p.id !== id) })),
+
+      cargar: async () => {
+        try {
+          const r = await productosApi.listar()
+          if (r.data.success && r.data.data) {
+            set({ productos: r.data.data })
+          }
+        } catch {}
+      },
+
+      agregar: async (nombre, precio) => {
+        const tempId = crypto.randomUUID()
+        // Optimistic: mostrar de inmediato
+        set(s => ({ productos: [...s.productos, { id: tempId, nombre, precio }] }))
+        try {
+          const r = await productosApi.crear(nombre, precio)
+          if (r.data.success && r.data.data) {
+            const real = r.data.data
+            set(s => ({
+              productos: s.productos.map(p => p.id === tempId
+                ? { id: real.id, nombre: real.nombre, precio: real.precio }
+                : p
+              ),
+            }))
+          }
+        } catch {
+          set(s => ({ productos: s.productos.filter(p => p.id !== tempId) }))
+        }
+      },
+
+      editar: async (id, nombre, precio) => {
+        const prev = get().productos
+        set(s => ({ productos: s.productos.map(p => p.id === id ? { ...p, nombre, precio } : p) }))
+        try {
+          await productosApi.actualizar(id, nombre, precio)
+        } catch {
+          set({ productos: prev })
+        }
+      },
+
+      eliminar: async (id) => {
+        const prev = get().productos
+        set(s => ({ productos: s.productos.filter(p => p.id !== id) }))
+        try {
+          await productosApi.eliminar(id)
+        } catch {
+          set({ productos: prev })
+        }
+      },
     }),
     { name: 'pos-productos' }
   )

@@ -5,17 +5,22 @@ import ReportePage from './pages/ReportePage'
 import ConfigPage  from './pages/ConfigPage'
 import LoginPage   from './pages/LoginPage'
 import SetupPage   from './pages/SetupPage'
-import { useSyncStore }   from './stores/syncStore'
-import { useAuthStore }   from './stores/authStore'
-import { useEmpresaStore } from './stores/empresaStore'
+import { useSyncStore }     from './stores/syncStore'
+import { useAuthStore }     from './stores/authStore'
+import { useEmpresaStore }  from './stores/empresaStore'
+import { useProductosStore } from './stores/productosStore'
 
 export default function App() {
   const { online, pendientes } = useSyncStore()
   const { isAuthenticated, negocioNombre, logout } = useAuthStore()
   const { empresa, configurada, hydrated, cargar } = useEmpresaStore()
+  const { cargar: cargarProductos } = useProductosStore()
 
   useEffect(() => {
-    if (isAuthenticated()) cargar()
+    if (isAuthenticated()) {
+      cargar()
+      cargarProductos()
+    }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!isAuthenticated()) return <LoginPage />

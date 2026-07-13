@@ -49,6 +49,12 @@ func SetupRouter(db *gorm.DB, cfg *config.Config, imp *impresora.Impresora, emai
 			empresa := handlers.NuevoEmpresaHandler(db, cfg)
 			protected.GET("/empresa", empresa.Get)
 			protected.PUT("/empresa", empresa.Update)
+
+			productos := handlers.NuevoProductoHandler(db)
+			protected.GET("/productos", productos.List)
+			protected.POST("/productos", productos.Create)
+			protected.PUT("/productos/:id", productos.Update)
+			protected.DELETE("/productos/:id", productos.Delete)
 		}
 	}
 

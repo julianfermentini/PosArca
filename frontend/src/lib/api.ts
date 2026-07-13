@@ -91,4 +91,21 @@ export const empresaApi = {
     api.put<ApiResponse<Empresa>>('/empresa', payload),
 }
 
+export interface ProductoAPI {
+  id: string
+  nombre: string
+  precio: number | null
+}
+
+export const productosApi = {
+  listar: () =>
+    api.get<ApiResponse<ProductoAPI[]>>('/productos'),
+  crear: (nombre: string, precio: number | null) =>
+    api.post<ApiResponse<ProductoAPI>>('/productos', { nombre, precio }),
+  actualizar: (id: string, nombre: string, precio: number | null) =>
+    api.put<ApiResponse<ProductoAPI>>(`/productos/${id}`, { nombre, precio }),
+  eliminar: (id: string) =>
+    api.delete<ApiResponse<null>>(`/productos/${id}`),
+}
+
 export default api
