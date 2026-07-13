@@ -194,7 +194,6 @@ export default function VentaPage() {
                 onFocus={e => (e.target.style.borderColor = '#3B72E0')}
                 onBlur={e => (e.target.style.borderColor = '')}
                 onKeyDown={e => { if (e.key === 'Enter' && store.descripcionActual.trim()) setPaso('precio') }}
-                autoFocus
               />
             </div>
 
@@ -289,7 +288,7 @@ export default function VentaPage() {
             />
 
             <button
-              onClick={() => { setPaso('descripcion'); store.setPrecio('') }}
+              onClick={() => { setPaso('descripcion'); store.setPrecio(''); store.setDescripcion('') }}
               className="text-gray-400 hover:text-gray-600 text-sm text-left transition-colors"
               style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px 0' }}
             >
