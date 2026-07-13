@@ -43,11 +43,18 @@ func migrar(db *gorm.DB) error {
 		db.Exec(`DROP TABLE IF EXISTS config_empresa CASCADE`)
 	}
 
-	return db.AutoMigrate(
+	if err := db.AutoMigrate(
 		&models.User{},
 		&models.Venta{},
 		&models.VentaItem{},
 		&models.Factura{},
 		&models.ConfigEmpresa{},
-	)
+	); err != nil {
+		return err
+	}
+
+	// Eliminar restricción NOT NULL de cuit si existe (puede fallar silenciosamente)
+	db.Exec(`ALTER TABLE config_empresa ALTER COLUMN cuit DROP NOT NULL`)
+
+	return nil
 }

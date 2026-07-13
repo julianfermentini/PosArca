@@ -45,8 +45,8 @@ func (h *EmpresaHandler) Update(c *gin.Context) {
 	var emp models.ConfigEmpresa
 	h.db.First(&emp)
 
-	// Primer uso: poblar campos ARCA desde .env
-	if emp.CUIT == "" {
+	// Primer uso: crear nuevo registro con campos ARCA desde .env
+	if emp.ID == uuid.Nil {
 		emp.ID = uuid.New()
 		emp.CUIT = h.cfg.ArcaCUIT
 		emp.PuntoVenta = h.cfg.ArcaPuntoVenta

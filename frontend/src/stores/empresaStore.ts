@@ -11,7 +11,7 @@ interface EmpresaStore {
 
 export const useEmpresaStore = create<EmpresaStore>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       empresa: null,
       configurada: false,
 
@@ -21,7 +21,8 @@ export const useEmpresaStore = create<EmpresaStore>()(
           if (r.data.success) {
             const emp = r.data.data
             if (!emp) return
-            set({ empresa: emp, configurada: !!emp.razon_social })
+            const configurada = get().configurada || !!emp.razon_social
+            set({ empresa: emp, configurada })
           }
         } catch {}
       },

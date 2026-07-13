@@ -4,7 +4,7 @@ import "github.com/google/uuid"
 
 type ConfigEmpresa struct {
 	ID           uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
-	CUIT         string    `gorm:"column:cuit;not null" json:"cuit"`
+	CUIT         string    `gorm:"column:cuit" json:"cuit"`
 	RazonSocial  string    `gorm:"not null" json:"razon_social"`
 	PuntoVenta   int       `gorm:"default:1" json:"punto_venta"`
 	CertPath     string    `json:"cert_path,omitempty"`
