@@ -164,7 +164,7 @@ export default function VentaPage() {
     <div className="h-full flex flex-col overflow-hidden" style={{ background: '#F3F4F6' }}>
 
       {/* ── Mobile tab selector ── */}
-      <div className="md:hidden flex p-2 gap-1 bg-white border-b flex-shrink-0" style={{ borderColor: 'rgba(0,0,0,0.06)' }}>
+      <div className="lg:hidden flex p-2 gap-1 bg-white border-b flex-shrink-0" style={{ borderColor: 'rgba(0,0,0,0.06)' }}>
         <button className={mtab('agregar')} onClick={() => setMobileTab('agregar')}>Agregar</button>
         <button className={mtab('carrito')} onClick={() => setMobileTab('carrito')}>
           Carrito {store.carrito.length > 0 && <span className="ml-1 text-blue-500">({store.carrito.length})</span>}
@@ -175,8 +175,8 @@ export default function VentaPage() {
       <div className="flex flex-1 overflow-hidden">
 
       {/* ── LEFT: Product entry ── */}
-      <div className={`${mobileTab === 'agregar' ? 'flex' : 'hidden'} md:flex flex-col bg-white border-r overflow-y-auto flex-shrink-0 w-full md:w-auto`}
-        style={{ borderColor: 'rgba(0,0,0,0.06)', padding: 24, gap: 18, ...(window.innerWidth >= 768 ? { width: 380 } : {}) }}>
+      <div className={`${mobileTab === 'agregar' ? 'flex' : 'hidden'} lg:flex flex-col bg-white border-r overflow-y-auto flex-shrink-0 w-full lg:w-auto`}
+        style={{ borderColor: 'rgba(0,0,0,0.06)', padding: 24, gap: 18, ...(window.innerWidth >= 1024 ? { width: 380 } : {}) }}>
 
         {paso === 'descripcion' ? (
           <>
@@ -300,7 +300,7 @@ export default function VentaPage() {
       </div>
 
       {/* ── CENTER: Cart ── */}
-      <div className={`${mobileTab === 'carrito' ? 'flex' : 'hidden'} md:flex flex-1 flex-col min-w-0 w-full`} style={{ background: '#F3F4F6' }}>
+      <div className={`${mobileTab === 'carrito' ? 'flex' : 'hidden'} lg:flex flex-1 flex-col min-w-0 w-full`} style={{ background: '#F3F4F6' }}>
         <div style={{ padding: '24px 28px 12px', display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
           <h2 className="font-bold text-gray-900" style={{ fontSize: 20, margin: 0 }}>Carrito</h2>
           <span className="text-gray-400 text-sm">
@@ -355,8 +355,8 @@ export default function VentaPage() {
       </div>
 
       {/* ── RIGHT: Totals ── */}
-      <div className={`${mobileTab === 'cobrar' ? 'flex' : 'hidden'} md:flex flex-col bg-white border-l overflow-y-auto flex-shrink-0 w-full md:w-auto`}
-        style={{ borderColor: 'rgba(0,0,0,0.06)', padding: 24, gap: 18, ...(window.innerWidth >= 768 ? { width: 360 } : {}) }}>
+      <div className={`${mobileTab === 'cobrar' ? 'flex' : 'hidden'} lg:flex flex-col bg-white border-l overflow-y-auto flex-shrink-0 w-full lg:w-auto`}
+        style={{ borderColor: 'rgba(0,0,0,0.06)', padding: 24, gap: 18, ...(window.innerWidth >= 1024 ? { width: 360 } : {}) }}>
 
         <h2 className="font-bold text-gray-900" style={{ fontSize: 20, margin: 0 }}>Totales</h2>
 
