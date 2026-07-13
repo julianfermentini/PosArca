@@ -41,13 +41,13 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 flex items-center justify-center p-8">
+    <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4 md:p-8">
       <div
-        className="w-full bg-white rounded-3xl overflow-hidden shadow-2xl border border-gray-200 flex"
+        className="w-full bg-white rounded-2xl md:rounded-3xl overflow-hidden shadow-2xl border border-gray-200 flex"
         style={{ maxWidth: 900, minHeight: 520 }}
       >
-        {/* Left: brand panel */}
-        <div className="bg-gray-900 p-12 flex flex-col justify-between flex-shrink-0" style={{ width: '42%' }}>
+        {/* Left: brand panel — hidden on mobile */}
+        <div className="hidden md:flex bg-gray-900 p-12 flex-col justify-between flex-shrink-0" style={{ width: '42%' }}>
           <div>
             <div className="flex items-center gap-2.5 mb-7">
               <span
@@ -72,8 +72,14 @@ export default function LoginPage() {
         <form
           onSubmit={handleSubmit}
           className="flex-1 flex flex-col justify-center"
-          style={{ padding: '52px 44px', gap: 18 }}
+          style={{ padding: '36px 28px', gap: 18 }}
         >
+          {/* Logo — solo visible en mobile */}
+          <div className="flex items-center gap-2 mb-2 md:hidden">
+            <span className="flex items-center justify-center font-black text-white text-sm"
+              style={{ width: 32, height: 32, borderRadius: 9, background: '#3B72E0' }}>PA</span>
+            <span className="font-black text-gray-900 tracking-tight text-xl">PosArca</span>
+          </div>
           <div>
             <h1 className="font-bold text-gray-900 mb-1.5" style={{ fontSize: 24 }}>
               {modo === 'register' ? 'Creá tu cuenta' : 'Bienvenido de nuevo'}
