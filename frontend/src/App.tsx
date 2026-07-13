@@ -12,13 +12,14 @@ import { useEmpresaStore } from './stores/empresaStore'
 export default function App() {
   const { online, pendientes } = useSyncStore()
   const { isAuthenticated, negocioNombre, logout } = useAuthStore()
-  const { empresa, configurada, cargar } = useEmpresaStore()
+  const { empresa, configurada, hydrated, cargar } = useEmpresaStore()
 
   useEffect(() => {
     if (isAuthenticated()) cargar()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!isAuthenticated()) return <LoginPage />
+  if (!hydrated) return null
   if (!configurada) return <SetupPage onComplete={cargar} />
 
   const displayName = empresa?.razon_social || negocioNombre

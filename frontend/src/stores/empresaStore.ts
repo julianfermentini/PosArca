@@ -4,7 +4,8 @@ import { empresaApi, type Empresa } from '../lib/api'
 
 interface EmpresaStore {
   empresa: Empresa | null
-  configurada: boolean    // true si razon_social no está vacía
+  configurada: boolean
+  hydrated: boolean
   cargar: () => Promise<void>
   guardar: (datos: Omit<Empresa, 'id' | 'cuit' | 'punto_venta'>) => Promise<void>
 }
@@ -14,6 +15,7 @@ export const useEmpresaStore = create<EmpresaStore>()(
     (set, get) => ({
       empresa: null,
       configurada: false,
+      hydrated: false,
 
       cargar: async () => {
         try {
@@ -29,9 +31,9 @@ export const useEmpresaStore = create<EmpresaStore>()(
 
       guardar: async (datos) => {
         const r = await empresaApi.update({
-          razon_social: datos.razon_social,
-          direccion:    datos.direccion,
-          telefono:     datos.telefono,
+          razon_social:  datos.razon_social,
+          direccion:     datos.direccion,
+          telefono:      datos.telefono,
           condicion_iva: datos.condicion_iva,
         })
         if (r.data.success) {
@@ -44,6 +46,9 @@ export const useEmpresaStore = create<EmpresaStore>()(
     {
       name: 'pos-empresa',
       partialize: (state) => ({ empresa: state.empresa, configurada: state.configurada }),
+      onRehydrateStorage: () => (state) => {
+        if (state) state.hydrated = true
+      },
     }
   )
 )
