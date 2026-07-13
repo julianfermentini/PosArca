@@ -12,16 +12,16 @@ import { useProductosStore } from './stores/productosStore'
 
 export default function App() {
   const { online, pendientes } = useSyncStore()
-  const { isAuthenticated, negocioNombre, logout } = useAuthStore()
+  const { token, isAuthenticated, negocioNombre, logout } = useAuthStore()
   const { empresa, configurada, hydrated, cargar } = useEmpresaStore()
   const { cargar: cargarProductos } = useProductosStore()
 
   useEffect(() => {
-    if (isAuthenticated()) {
+    if (token) {
       cargar()
       cargarProductos()
     }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [token]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!isAuthenticated()) return <LoginPage />
   if (!hydrated) return null
