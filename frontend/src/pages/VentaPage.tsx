@@ -21,6 +21,7 @@ export default function VentaPage() {
   const { productos } = useProductosStore()
 
   const [paso, setPaso] = useState<Paso>('descripcion')
+  const [mobileTab, setMobileTab] = useState<'agregar' | 'carrito' | 'cobrar'>('agregar')
   const [cargando, setCargando] = useState(false)
   const [errorMsg, setErrorMsg] = useState('')
   const [emitido, setEmitido] = useState<{ tipo: string; numero: string } | null>(null)
@@ -156,12 +157,26 @@ export default function VentaPage() {
   const neto  = store.getSubtotal()
   const iva   = store.getIVA()
 
+  const mtab = (t: typeof mobileTab) =>
+    `flex-1 py-2 text-xs font-bold transition-colors rounded-lg ${mobileTab === t ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500'}`
+
   return (
-    <div className="h-full flex overflow-hidden" style={{ background: '#F3F4F6' }}>
+    <div className="h-full flex flex-col overflow-hidden" style={{ background: '#F3F4F6' }}>
+
+      {/* ── Mobile tab selector ── */}
+      <div className="md:hidden flex p-2 gap-1 bg-white border-b flex-shrink-0" style={{ borderColor: 'rgba(0,0,0,0.06)' }}>
+        <button className={mtab('agregar')} onClick={() => setMobileTab('agregar')}>Agregar</button>
+        <button className={mtab('carrito')} onClick={() => setMobileTab('carrito')}>
+          Carrito {store.carrito.length > 0 && <span className="ml-1 text-blue-500">({store.carrito.length})</span>}
+        </button>
+        <button className={mtab('cobrar')} onClick={() => setMobileTab('cobrar')}>Cobrar</button>
+      </div>
+
+      <div className="flex flex-1 overflow-hidden">
 
       {/* ── LEFT: Product entry ── */}
-      <div className="flex flex-col bg-white border-r overflow-y-auto flex-shrink-0"
-        style={{ width: 380, borderColor: 'rgba(0,0,0,0.06)', padding: 24, gap: 18 }}>
+      <div className={`${mobileTab === 'agregar' ? 'flex' : 'hidden'} md:flex flex-col bg-white border-r overflow-y-auto flex-shrink-0 w-full md:w-auto`}
+        style={{ borderColor: 'rgba(0,0,0,0.06)', padding: 24, gap: 18, ...(window.innerWidth >= 768 ? { width: 380 } : {}) }}>
 
         {paso === 'descripcion' ? (
           <>
@@ -270,7 +285,7 @@ export default function VentaPage() {
             <NumericKeypad
               value={store.precioActual}
               onChange={store.setPrecio}
-              onConfirm={() => { store.agregarItem(); setPaso('descripcion') }}
+              onConfirm={() => { store.agregarItem(); setPaso('descripcion'); setMobileTab('carrito') }}
             />
 
             <button
@@ -285,7 +300,7 @@ export default function VentaPage() {
       </div>
 
       {/* ── CENTER: Cart ── */}
-      <div className="flex-1 flex flex-col min-w-0" style={{ background: '#F3F4F6' }}>
+      <div className={`${mobileTab === 'carrito' ? 'flex' : 'hidden'} md:flex flex-1 flex-col min-w-0 w-full`} style={{ background: '#F3F4F6' }}>
         <div style={{ padding: '24px 28px 12px', display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
           <h2 className="font-bold text-gray-900" style={{ fontSize: 20, margin: 0 }}>Carrito</h2>
           <span className="text-gray-400 text-sm">
@@ -340,8 +355,8 @@ export default function VentaPage() {
       </div>
 
       {/* ── RIGHT: Totals ── */}
-      <div className="flex flex-col bg-white border-l overflow-y-auto flex-shrink-0"
-        style={{ width: 360, borderColor: 'rgba(0,0,0,0.06)', padding: 24, gap: 18 }}>
+      <div className={`${mobileTab === 'cobrar' ? 'flex' : 'hidden'} md:flex flex-col bg-white border-l overflow-y-auto flex-shrink-0 w-full md:w-auto`}
+        style={{ borderColor: 'rgba(0,0,0,0.06)', padding: 24, gap: 18, ...(window.innerWidth >= 768 ? { width: 360 } : {}) }}>
 
         <h2 className="font-bold text-gray-900" style={{ fontSize: 20, margin: 0 }}>Totales</h2>
 
@@ -507,6 +522,7 @@ export default function VentaPage() {
           to   { opacity: 1; transform: translateY(0) scale(1); }
         }
       `}</style>
+      </div>{/* end inner flex */}
     </div>
   )
 }
