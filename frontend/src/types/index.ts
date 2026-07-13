@@ -79,4 +79,5 @@ export interface ItemCarrito {
   id: string
   descripcion: string
   precio_neto: number
+  cantidad: number
 }

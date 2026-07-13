@@ -326,28 +326,60 @@ export default function VentaPage() {
           ) : (
             store.carrito.map(item => (
               <div key={item.id} className="flex items-center gap-3 bg-white rounded-xl border border-gray-100"
-                style={{ padding: '14px 16px', boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}>
+                style={{ padding: '12px 14px', boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}>
+
+                {/* Nombre + precio unitario */}
                 <div className="flex-1 min-w-0">
                   <p className="font-semibold text-gray-900 truncate" style={{ fontSize: 14, marginBottom: 2 }}>
                     {item.descripcion}
                   </p>
                   <p className="font-mono text-gray-400" style={{ fontSize: 11 }}>
-                    {formatPrecio(item.precio_neto)} neto
+                    {formatPrecio(calcularTotal(item.precio_neto))} c/u
                   </p>
                 </div>
-                <p className="font-mono font-bold text-gray-900 flex-shrink-0" style={{ fontSize: 15 }}>
-                  {formatPrecio(calcularTotal(item.precio_neto))}
+
+                {/* Controles cantidad */}
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <button
+                    onPointerDown={e => { e.preventDefault(); store.decrementarItem(item.id) }}
+                    className="flex items-center justify-center font-bold active:scale-90 transition-all touch-manipulation"
+                    style={{
+                      width: 30, height: 30, borderRadius: 8, border: '1.5px solid #E5E7EB',
+                      background: item.cantidad === 1 ? '#FEF2F2' : '#F9FAFB',
+                      color: item.cantidad === 1 ? '#EF4444' : '#374151',
+                      cursor: 'pointer', fontSize: 16,
+                    }}
+                  >
+                    {item.cantidad === 1 ? (
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                        <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+                      </svg>
+                    ) : '−'}
+                  </button>
+
+                  <span className="font-mono font-bold text-gray-900 text-center"
+                    style={{ minWidth: 28, fontSize: 15 }}>
+                    {item.cantidad}
+                  </span>
+
+                  <button
+                    onPointerDown={e => { e.preventDefault(); store.incrementarItem(item.id) }}
+                    className="flex items-center justify-center font-bold active:scale-90 transition-all touch-manipulation"
+                    style={{
+                      width: 30, height: 30, borderRadius: 8, border: '1.5px solid #E5E7EB',
+                      background: '#F9FAFB', color: '#3B72E0',
+                      cursor: 'pointer', fontSize: 18,
+                    }}
+                  >
+                    +
+                  </button>
+                </div>
+
+                {/* Total del ítem */}
+                <p className="font-mono font-bold text-gray-900 flex-shrink-0" style={{ fontSize: 15, minWidth: 72, textAlign: 'right' }}>
+                  {formatPrecio(calcularTotal(item.precio_neto) * item.cantidad)}
                 </p>
-                <button
-                  onPointerDown={e => { e.preventDefault(); store.eliminarItem(item.id) }}
-                  className="flex items-center justify-center text-red-400 hover:bg-red-50 active:scale-95 transition-all touch-manipulation flex-shrink-0"
-                  style={{ width: 34, height: 34, borderRadius: 8, border: 'none', background: 'transparent', cursor: 'pointer' }}
-                >
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-                    <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
-                  </svg>
-                </button>
               </div>
             ))
           )}

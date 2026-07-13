@@ -15,15 +15,14 @@ interface VentaState {
   agregarItem: () => void
   agregarItemDirecto: (descripcion: string, precioFinal: number) => void
   eliminarItem: (id: string) => void
+  incrementarItem: (id: string) => void
+  decrementarItem: (id: string) => void
   limpiarCarrito: () => void
   setMetodoPago: (metodo: MetodoPago) => void
 
-  // Totales calculados localmente para mostrar en pantalla
   getSubtotal: () => number
   getIVA: () => number
   getTotal: () => number
-
-  // Solo descripcion + precio_neto — el backend calcula IVA y total
   getItemsParaAPI: () => ItemRequest[]
 }
 
@@ -37,28 +36,59 @@ export const useVentaStore = create<VentaState>((set, get) => ({
   setPrecio: (precio) => set({ precioActual: precio }),
 
   agregarItem: () => {
-    const { descripcionActual, precioActual } = get()
+    const { descripcionActual, precioActual, carrito } = get()
     const precioFinal = parseFloat(precioActual)
     if (!descripcionActual.trim() || isNaN(precioFinal) || precioFinal <= 0) return
     const precioNeto = calcularNeto(precioFinal)
+    const desc = descripcionActual.trim()
 
-    set((s) => ({
-      carrito: [...s.carrito, { id: newId(), descripcion: descripcionActual.trim(), precio_neto: precioNeto }],
-      descripcionActual: '',
-      precioActual: '',
-    }))
+    // Si ya existe el mismo producto con el mismo precio, incrementar cantidad
+    const existente = carrito.find(i => i.descripcion === desc && i.precio_neto === precioNeto)
+    if (existente) {
+      set((s) => ({
+        carrito: s.carrito.map(i => i.id === existente.id ? { ...i, cantidad: i.cantidad + 1 } : i),
+        descripcionActual: '',
+        precioActual: '',
+      }))
+    } else {
+      set((s) => ({
+        carrito: [...s.carrito, { id: newId(), descripcion: desc, precio_neto: precioNeto, cantidad: 1 }],
+        descripcionActual: '',
+        precioActual: '',
+      }))
+    }
   },
 
   agregarItemDirecto: (descripcion, precioFinal) => {
     const precioNeto = calcularNeto(precioFinal)
     if (!descripcion.trim() || precioNeto <= 0) return
-    set((s) => ({
-      carrito: [...s.carrito, { id: newId(), descripcion: descripcion.trim(), precio_neto: precioNeto }],
-    }))
+    const desc = descripcion.trim()
+    const existente = get().carrito.find(i => i.descripcion === desc && i.precio_neto === precioNeto)
+    if (existente) {
+      set((s) => ({
+        carrito: s.carrito.map(i => i.id === existente.id ? { ...i, cantidad: i.cantidad + 1 } : i),
+      }))
+    } else {
+      set((s) => ({
+        carrito: [...s.carrito, { id: newId(), descripcion: desc, precio_neto: precioNeto, cantidad: 1 }],
+      }))
+    }
   },
 
   eliminarItem: (id) =>
     set((s) => ({ carrito: s.carrito.filter((i) => i.id !== id) })),
+
+  incrementarItem: (id) =>
+    set((s) => ({
+      carrito: s.carrito.map(i => i.id === id ? { ...i, cantidad: i.cantidad + 1 } : i),
+    })),
+
+  decrementarItem: (id) =>
+    set((s) => ({
+      carrito: s.carrito
+        .map(i => i.id === id ? { ...i, cantidad: i.cantidad - 1 } : i)
+        .filter(i => i.cantidad > 0),
+    })),
 
   limpiarCarrito: () =>
     set({ carrito: [], metodoPago: null, descripcionActual: '', precioActual: '' }),
@@ -66,16 +96,18 @@ export const useVentaStore = create<VentaState>((set, get) => ({
   setMetodoPago: (metodo) => set({ metodoPago: metodo }),
 
   getSubtotal: () =>
-    get().carrito.reduce((acc, item) => acc + item.precio_neto, 0),
+    get().carrito.reduce((acc, item) => acc + item.precio_neto * item.cantidad, 0),
 
   getIVA: () => calcularIVA(get().getSubtotal()),
 
   getTotal: () => calcularTotal(get().getSubtotal()),
 
-  // El backend recalcula — solo enviamos lo mínimo
+  // Expandir por cantidad — el backend recibe una fila por unidad
   getItemsParaAPI: () =>
-    get().carrito.map((item) => ({
-      descripcion: item.descripcion,
-      precio_neto: item.precio_neto,
-    })),
+    get().carrito.flatMap(item =>
+      Array.from({ length: item.cantidad }, () => ({
+        descripcion: item.descripcion,
+        precio_neto: item.precio_neto,
+      }))
+    ),
 }))
