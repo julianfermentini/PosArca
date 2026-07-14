@@ -383,205 +383,209 @@ export default function VentaPage() {
       </div>
 
       {/* ── RIGHT: Totals ── */}
-      <div className={`${mobileTab === 'cobrar' ? 'flex' : 'hidden'} lg:flex flex-col bg-white border-l overflow-y-auto flex-shrink-0 w-full lg:w-auto`}
-        style={{ borderColor: 'rgba(0,0,0,0.06)', padding: 24, gap: 18, ...(window.innerWidth >= 1024 ? { width: 360 } : {}) }}>
+      <div className={`${mobileTab === 'cobrar' ? 'flex' : 'hidden'} lg:flex flex-col bg-white border-l flex-shrink-0 w-full lg:w-auto`}
+        style={{ borderColor: 'rgba(0,0,0,0.06)', ...(window.innerWidth >= 1024 ? { width: 360 } : {}), overflow: 'hidden' }}>
 
-        <h2 className="font-bold text-gray-900" style={{ fontSize: 20, margin: 0 }}>Totales</h2>
+        {/* Scrollable content area */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: 24, display: 'flex', flexDirection: 'column', gap: 18 }}>
+          <h2 className="font-bold text-gray-900" style={{ fontSize: 20, margin: 0 }}>Totales</h2>
 
-        {/* Amounts */}
-        <div className="rounded-xl border border-gray-100 flex flex-col" style={{ background: '#F9FAFB', padding: 18, gap: 10 }}>
-          <div className="flex justify-between text-gray-500 text-sm">
-            <span>Subtotal neto</span>
-            <span className="font-mono font-semibold text-gray-700">{formatPrecio(neto)}</span>
+          {/* Amounts */}
+          <div className="rounded-xl border border-gray-100 flex flex-col" style={{ background: '#F9FAFB', padding: 18, gap: 10 }}>
+            <div className="flex justify-between text-gray-500 text-sm">
+              <span>Subtotal neto</span>
+              <span className="font-mono font-semibold text-gray-700">{formatPrecio(neto)}</span>
+            </div>
+            <div className="flex justify-between text-gray-500 text-sm">
+              <span>IVA 21%</span>
+              <span className="font-mono font-semibold text-gray-700">{formatPrecio(iva)}</span>
+            </div>
+            <div style={{ height: 1, background: 'rgba(0,0,0,0.06)', margin: '2px 0' }} />
+            <div className="flex justify-between items-baseline">
+              <span className="font-bold text-gray-900">Total</span>
+              <span className="font-mono font-black" style={{ fontSize: 24, color: '#3B72E0' }}>{formatPrecio(total)}</span>
+            </div>
           </div>
-          <div className="flex justify-between text-gray-500 text-sm">
-            <span>IVA 21%</span>
-            <span className="font-mono font-semibold text-gray-700">{formatPrecio(iva)}</span>
-          </div>
-          <div style={{ height: 1, background: 'rgba(0,0,0,0.06)', margin: '2px 0' }} />
-          <div className="flex justify-between items-baseline">
-            <span className="font-bold text-gray-900">Total</span>
-            <span className="font-mono font-black" style={{ fontSize: 24, color: '#3B72E0' }}>{formatPrecio(total)}</span>
-          </div>
-        </div>
 
-        {/* Payment method */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <p className="text-gray-400 font-bold uppercase tracking-widest" style={{ fontSize: 10 }}>Método de pago</p>
-          <div className="flex rounded-xl p-1" style={{ background: '#F3F4F6', gap: 4 }}>
-            {(['EFECTIVO', 'TARJETA', 'BILLETERA'] as MetodoPago[]).map(m => (
-              <button
-                key={m}
-                onPointerDown={e => { e.preventDefault(); store.setMetodoPago(m) }}
-                className="flex-1 rounded-lg text-sm font-semibold transition-all touch-manipulation active:scale-95"
-                style={{
-                  height: 42,
-                  border: 'none',
-                  cursor: 'pointer',
-                  background: store.metodoPago === m ? '#3B72E0' : 'transparent',
-                  color: store.metodoPago === m ? '#fff' : '#6B7280',
-                  boxShadow: store.metodoPago === m ? '0 1px 3px rgba(59,114,224,0.3)' : 'none',
-                }}
-              >
-                {m === 'EFECTIVO' ? 'Efectivo' : m === 'TARJETA' ? 'Tarjeta' : 'Billetera'}
-              </button>
-            ))}
+          {/* Payment method */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <p className="text-gray-400 font-bold uppercase tracking-widest" style={{ fontSize: 10 }}>Método de pago</p>
+            <div className="flex rounded-xl p-1" style={{ background: '#F3F4F6', gap: 4 }}>
+              {(['EFECTIVO', 'TARJETA', 'BILLETERA'] as MetodoPago[]).map(m => (
+                <button
+                  key={m}
+                  onPointerDown={e => { e.preventDefault(); store.setMetodoPago(m) }}
+                  className="flex-1 rounded-lg text-sm font-semibold transition-all touch-manipulation active:scale-95"
+                  style={{
+                    height: 42,
+                    border: 'none',
+                    cursor: 'pointer',
+                    background: store.metodoPago === m ? '#3B72E0' : 'transparent',
+                    color: store.metodoPago === m ? '#fff' : '#6B7280',
+                    boxShadow: store.metodoPago === m ? '0 1px 3px rgba(59,114,224,0.3)' : 'none',
+                  }}
+                >
+                  {m === 'EFECTIVO' ? 'Efectivo' : m === 'TARJETA' ? 'Tarjeta' : 'Billetera'}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
 
-        {/* Factura toggle */}
-        <label className="flex items-center gap-3 cursor-pointer select-none" style={{ userSelect: 'none' }}>
-          <div
-            onPointerDown={e => { e.preventDefault(); setNeedsFactura(v => !v) }}
-            className="relative transition-colors touch-manipulation"
-            style={{
-              width: 40, height: 24, borderRadius: 12,
-              background: needsFactura ? '#3B72E0' : '#D1D5DB',
-              flexShrink: 0,
-              cursor: 'pointer',
-            }}
-          >
-            <span
-              className="absolute bg-white rounded-full transition-transform"
+          {/* Factura toggle */}
+          <label className="flex items-center gap-3 cursor-pointer select-none" style={{ userSelect: 'none' }}>
+            <div
+              onPointerDown={e => { e.preventDefault(); setNeedsFactura(v => !v) }}
+              className="relative transition-colors touch-manipulation"
               style={{
-                top: 4, width: 16, height: 16,
-                boxShadow: '0 1px 2px rgba(0,0,0,0.2)',
-                transform: needsFactura ? 'translateX(20px)' : 'translateX(4px)',
+                width: 40, height: 24, borderRadius: 12,
+                background: needsFactura ? '#3B72E0' : '#D1D5DB',
+                flexShrink: 0,
+                cursor: 'pointer',
               }}
-            />
-          </div>
-          <span className="text-sm font-medium text-gray-700">Necesita factura</span>
-        </label>
-
-        {/* Inline factura fields */}
-        {needsFactura && (
-          <div className="flex flex-col rounded-xl border border-gray-200" style={{ background: '#F9FAFB', padding: 14, gap: 10 }}>
-            <div>
-              <label className="block font-semibold text-gray-500 mb-1" style={{ fontSize: 11 }}>Razón social</label>
-              <input
-                type="text"
-                value={razonSocial}
-                onChange={e => setRazonSocial(e.target.value)}
-                placeholder="Empresa S.A."
-                className="w-full border border-gray-200 rounded-lg outline-none transition-all"
-                style={{ padding: '9px 12px', fontSize: 13 }}
-                onFocus={e => (e.target.style.borderColor = '#3B72E0')}
-                onBlur={e => (e.target.style.borderColor = '')}
+            >
+              <span
+                className="absolute bg-white rounded-full transition-transform"
+                style={{
+                  top: 4, width: 16, height: 16,
+                  boxShadow: '0 1px 2px rgba(0,0,0,0.2)',
+                  transform: needsFactura ? 'translateX(20px)' : 'translateX(4px)',
+                }}
               />
             </div>
-            <div>
-              <label className="block font-semibold text-gray-500 mb-1" style={{ fontSize: 11 }}>CUIT del cliente</label>
-              <input
-                type="tel"
-                inputMode="numeric"
-                value={cuit}
-                onChange={e => setCuit(formatCUIT(e.target.value.replace(/\D/g, '')))}
-                maxLength={13}
-                placeholder="20-12345678-9"
-                className="w-full border border-gray-200 rounded-lg outline-none font-mono transition-all"
-                style={{ padding: '9px 12px', fontSize: 13 }}
-                onFocus={e => (e.target.style.borderColor = '#3B72E0')}
-                onBlur={e => (e.target.style.borderColor = '')}
-              />
+            <span className="text-sm font-medium text-gray-700">Necesita factura</span>
+          </label>
+
+          {/* Inline factura fields */}
+          {needsFactura && (
+            <div className="flex flex-col rounded-xl border border-gray-200" style={{ background: '#F9FAFB', padding: 14, gap: 10 }}>
+              <div>
+                <label className="block font-semibold text-gray-500 mb-1" style={{ fontSize: 11 }}>Razón social</label>
+                <input
+                  type="text"
+                  value={razonSocial}
+                  onChange={e => setRazonSocial(e.target.value)}
+                  placeholder="Empresa S.A."
+                  className="w-full border border-gray-200 rounded-lg outline-none transition-all"
+                  style={{ padding: '9px 12px', fontSize: 13 }}
+                  onFocus={e => (e.target.style.borderColor = '#3B72E0')}
+                  onBlur={e => (e.target.style.borderColor = '')}
+                />
+              </div>
+              <div>
+                <label className="block font-semibold text-gray-500 mb-1" style={{ fontSize: 11 }}>CUIT del cliente</label>
+                <input
+                  type="tel"
+                  inputMode="numeric"
+                  value={cuit}
+                  onChange={e => setCuit(formatCUIT(e.target.value.replace(/\D/g, '')))}
+                  maxLength={13}
+                  placeholder="20-12345678-9"
+                  className="w-full border border-gray-200 rounded-lg outline-none font-mono transition-all"
+                  style={{ padding: '9px 12px', fontSize: 13 }}
+                  onFocus={e => (e.target.style.borderColor = '#3B72E0')}
+                  onBlur={e => (e.target.style.borderColor = '')}
+                />
+              </div>
+              <div>
+                <label className="block font-semibold text-gray-500 mb-1" style={{ fontSize: 11 }}>Email del cliente</label>
+                <input
+                  type="email"
+                  value={emailCliente}
+                  onChange={e => setEmailCliente(e.target.value)}
+                  placeholder="cliente@empresa.com"
+                  className="w-full border border-gray-200 rounded-lg outline-none transition-all"
+                  style={{ padding: '9px 12px', fontSize: 13 }}
+                  onFocus={e => (e.target.style.borderColor = '#3B72E0')}
+                  onBlur={e => (e.target.style.borderColor = '')}
+                />
+              </div>
             </div>
-            <div>
-              <label className="block font-semibold text-gray-500 mb-1" style={{ fontSize: 11 }}>Email del cliente</label>
-              <input
-                type="email"
-                value={emailCliente}
-                onChange={e => setEmailCliente(e.target.value)}
-                placeholder="cliente@empresa.com"
-                className="w-full border border-gray-200 rounded-lg outline-none transition-all"
-                style={{ padding: '9px 12px', fontSize: 13 }}
-                onFocus={e => (e.target.style.borderColor = '#3B72E0')}
-                onBlur={e => (e.target.style.borderColor = '')}
-              />
+          )}
+        </div>
+
+        {/* ── Bottom: always visible ── */}
+        <div style={{ flexShrink: 0, padding: '0 24px 24px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {/* Success toast */}
+          {emitido && (
+            <div className="rounded-xl border flex flex-col" style={{
+              background: '#F0FDF4', borderColor: '#86EFAC', padding: '14px 16px', gap: 4,
+              animation: 'fadeSlideIn 0.25s ease',
+            }}>
+              <span className="font-bold" style={{ color: '#16A34A' }}>{emitido.tipo} emitido</span>
+              {emitido.numero !== 'OFFLINE' ? (
+                <span className="font-mono text-gray-400" style={{ fontSize: 11 }}>
+                  N° {emitido.numero} · CAE aprobado
+                </span>
+              ) : (
+                <span style={{ fontSize: 12, color: '#D97706' }}>Guardado offline — se sincronizará</span>
+              )}
             </div>
-          </div>
-        )}
+          )}
 
-        <div style={{ flex: 1 }} />
+          {errorMsg && (
+            <div className="rounded-xl border text-sm font-medium" style={{
+              background: '#FEF2F2', borderColor: '#FECACA', color: '#DC2626', padding: '12px 16px',
+            }}>
+              {errorMsg}
+            </div>
+          )}
 
-        {/* Success toast */}
-        {emitido && (
-          <div className="rounded-xl border flex flex-col" style={{
-            background: '#F0FDF4', borderColor: '#86EFAC', padding: '14px 16px', gap: 4,
-            animation: 'fadeSlideIn 0.25s ease',
-          }}>
-            <span className="font-bold" style={{ color: '#16A34A' }}>{emitido.tipo} emitido</span>
-            {emitido.numero !== 'OFFLINE' ? (
-              <span className="font-mono text-gray-400" style={{ fontSize: 11 }}>
-                N° {emitido.numero} · CAE aprobado
-              </span>
-            ) : (
-              <span style={{ fontSize: 12, color: '#D97706' }}>Guardado offline — se sincronizará</span>
-            )}
-          </div>
-        )}
-
-        {errorMsg && (
-          <div className="rounded-xl border text-sm font-medium" style={{
-            background: '#FEF2F2', borderColor: '#FECACA', color: '#DC2626', padding: '12px 16px',
-          }}>
-            {errorMsg}
-          </div>
-        )}
-
-        {/* Emit button */}
-        <button
-          onPointerDown={e => { e.preventDefault(); emitir() }}
-          disabled={!puedeEmitir || cargando}
-          className="w-full font-bold text-white text-base transition-all active:scale-95 touch-manipulation"
-          style={{
-            height: 54,
-            borderRadius: 12,
-            border: 'none',
-            cursor: puedeEmitir && !cargando ? 'pointer' : 'not-allowed',
-            background: puedeEmitir && !cargando ? '#3B72E0' : '#93AEDE',
-          }}
-        >
-          {cargando ? 'Emitiendo...' : needsFactura ? 'Emitir Factura' : 'Emitir Ticket'}
-        </button>
-
-        {/* Ticket no fiscal / prueba — solo visible con impresora conectada */}
-        {printer.conectado && !needsFactura && (
+          {/* Emit button */}
           <button
-            onPointerDown={e => {
-              e.preventDefault()
-              if (!puedeEmitir) return
-              printer.imprimirNoFiscal({
-                negocioNombre:     empresa?.razon_social ?? '',
-                titular:           empresa?.titular ?? '',
-                cuit:              empresa?.cuit ?? '',
-                ingBrutos:         empresa?.ing_brutos ?? '',
-                direccion:         empresa?.direccion ?? '',
-                defensaConsumidor: empresa?.defensa_consumidor ?? '',
-                condicionIVA:      empresa?.condicion_iva ?? '',
-                items: store.getItemsParaAPI().map(it => ({
-                  descripcion: it.descripcion,
-                  precioNeto:  it.precio_neto,
-                  total:       calcularTotal(it.precio_neto),
-                })),
-                subtotal:   store.getSubtotal(),
-                iva:        store.getIVA(),
-                total:      store.getTotal(),
-                metodoPago: store.metodoPago ?? 'EFECTIVO',
-              })
-            }}
-            disabled={!puedeEmitir}
-            className="w-full font-semibold text-sm transition-all active:scale-95 touch-manipulation"
+            onPointerDown={e => { e.preventDefault(); emitir() }}
+            disabled={!puedeEmitir || cargando}
+            className="w-full font-bold text-white text-base transition-all active:scale-95 touch-manipulation"
             style={{
-              height: 42,
+              height: 54,
               borderRadius: 12,
-              border: '1.5px solid #D1D5DB',
-              cursor: puedeEmitir ? 'pointer' : 'not-allowed',
-              background: puedeEmitir ? '#F9FAFB' : '#F3F4F6',
-              color: puedeEmitir ? '#374151' : '#9CA3AF',
+              border: 'none',
+              cursor: puedeEmitir && !cargando ? 'pointer' : 'not-allowed',
+              background: puedeEmitir && !cargando ? '#3B72E0' : '#93AEDE',
             }}
           >
-            Ticket no fiscal / Prueba
+            {cargando ? 'Emitiendo...' : needsFactura ? 'Emitir Factura' : 'Emitir Ticket'}
           </button>
-        )}
+
+          {/* Ticket no fiscal / prueba — solo visible con impresora conectada */}
+          {printer.conectado && !needsFactura && (
+            <button
+              onPointerDown={e => {
+                e.preventDefault()
+                if (!puedeEmitir) return
+                printer.imprimirNoFiscal({
+                  negocioNombre:     empresa?.razon_social ?? '',
+                  titular:           empresa?.titular ?? '',
+                  cuit:              empresa?.cuit ?? '',
+                  ingBrutos:         empresa?.ing_brutos ?? '',
+                  direccion:         empresa?.direccion ?? '',
+                  defensaConsumidor: empresa?.defensa_consumidor ?? '',
+                  condicionIVA:      empresa?.condicion_iva ?? '',
+                  items: store.getItemsParaAPI().map(it => ({
+                    descripcion: it.descripcion,
+                    precioNeto:  it.precio_neto,
+                    total:       calcularTotal(it.precio_neto),
+                  })),
+                  subtotal:   store.getSubtotal(),
+                  iva:        store.getIVA(),
+                  total:      store.getTotal(),
+                  metodoPago: store.metodoPago ?? 'EFECTIVO',
+                })
+              }}
+              disabled={!puedeEmitir}
+              className="w-full font-semibold text-sm transition-all active:scale-95 touch-manipulation"
+              style={{
+                height: 42,
+                borderRadius: 12,
+                border: '1.5px solid #D1D5DB',
+                cursor: puedeEmitir ? 'pointer' : 'not-allowed',
+                background: puedeEmitir ? '#F9FAFB' : '#F3F4F6',
+                color: puedeEmitir ? '#374151' : '#9CA3AF',
+              }}
+            >
+              Ticket no fiscal / Prueba
+            </button>
+          )}
+        </div>
       </div>
 
       <style>{`
