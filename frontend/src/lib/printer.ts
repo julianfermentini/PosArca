@@ -283,6 +283,61 @@ export function buildTicketNoFiscalBytes(d: DatosTicketNoFiscal): Uint8Array {
   return enc.bytes()
 }
 
+// ─── Cierre de Caja ──────────────────────────────────────────────────────────
+
+export interface DatosCierre {
+  negocioNombre: string
+  cuit:          string
+  fecha:         string   // "14/07/2026"
+  totalVentas:   number
+  totalTickets:  number
+  totalFacturas: number
+  montoTotal:    number
+  montoNeto:     number
+  montoIVA:      number
+  efectivo:      number
+  tarjeta:       number
+  billetera:     number
+}
+
+export function buildCierreBytes(d: DatosCierre): Uint8Array {
+  const enc = new EscPos()
+  const W   = 32
+  const $   = (n: number) => `$ ${n.toFixed(2)}`
+
+  enc.init()
+  enc.center()
+    .bold(true).doubleH(true).line(d.negocioNombre.toUpperCase()).doubleH(false).bold(false)
+  enc.line(`C.U.I.T. ${fmtCuit(d.cuit)}`)
+  enc.lf(1)
+  enc.bold(true).line('CIERRE DE CAJA').bold(false)
+  enc.line(d.fecha)
+  enc.sep(W)
+
+  enc.left()
+  enc.bold(true).line('COMPROBANTES').bold(false)
+  enc.twoCol('Tickets:', String(d.totalTickets), W)
+  enc.twoCol('Facturas:', String(d.totalFacturas), W)
+  enc.twoCol('Total:', String(d.totalVentas), W)
+  enc.sep(W)
+
+  enc.bold(true).line('DESGLOSE').bold(false)
+  enc.twoCol('Subtotal neto:', $(d.montoNeto), W)
+  enc.twoCol('IVA 21%:', $(d.montoIVA), W)
+  enc.sep(W)
+  enc.bold(true).twoCol('TOTAL:', $(d.montoTotal), W).bold(false)
+  enc.sep(W)
+
+  enc.bold(true).line('POR METODO DE PAGO').bold(false)
+  enc.twoCol('Efectivo:', $(d.efectivo), W)
+  enc.twoCol('Tarjeta:', $(d.tarjeta), W)
+  enc.twoCol('Billetera:', $(d.billetera), W)
+  enc.sep(W)
+
+  enc.lf(4).cut()
+  return enc.bytes()
+}
+
 // ─── Conexión WebUSB ──────────────────────────────────────────────────────────
 
 export interface PrinterInfo {

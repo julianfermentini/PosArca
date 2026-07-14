@@ -118,6 +118,26 @@ func (h *VentasHandler) Crear(c *gin.Context) {
 	})
 }
 
+// DiasConVentas maneja GET /api/ventas/dias?mes=YYYY-MM
+func (h *VentasHandler) DiasConVentas(c *gin.Context) {
+	mes := c.Query("mes")
+	if _, err := time.Parse("2006-01", mes); err != nil {
+		mes = time.Now().Format("2006-01")
+	}
+	var fechas []string
+	h.db.Raw(
+		`SELECT DISTINCT TO_CHAR(created_at, 'YYYY-MM-DD') AS fecha
+		 FROM ventas
+		 WHERE TO_CHAR(created_at, 'YYYY-MM') = ?
+		 ORDER BY fecha ASC`,
+		mes,
+	).Scan(&fechas)
+	if fechas == nil {
+		fechas = []string{}
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": fechas})
+}
+
 // Listar maneja GET /api/ventas
 func (h *VentasHandler) Listar(c *gin.Context) {
 	var ventas []models.Venta

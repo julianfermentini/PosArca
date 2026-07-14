@@ -35,6 +35,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config, imp *impresora.Impresora, emai
 			ventas := handlers.NuevoVentasHandler(db, cfg, imp)
 			protected.POST("/ventas", ventas.Crear)
 			protected.GET("/ventas", ventas.Listar)
+			protected.GET("/ventas/dias", ventas.DiasConVentas)
 
 			facturas := handlers.NuevoFacturasHandler(db, cfg, imp, emailCli)
 			protected.POST("/facturas", facturas.Crear)

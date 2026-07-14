@@ -47,6 +47,9 @@ export const ventasApi = {
 
   listar: (fecha?: string) =>
     api.get<ApiResponse<Venta[]>>('/ventas', { params: fecha ? { fecha } : {} }),
+
+  diasConVentas: (mes: string) =>
+    api.get<ApiResponse<string[]>>('/ventas/dias', { params: { mes } }),
 }
 
 export const facturasApi = {
