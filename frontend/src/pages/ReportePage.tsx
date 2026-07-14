@@ -3,6 +3,8 @@ import { format, addDays } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { reportesApi, ventasApi } from '../lib/api'
 import { formatPrecio } from '../lib/utils'
+import { useEmpresaStore } from '../stores/empresaStore'
+import { usePrinterStore } from '../stores/printerStore'
 import type { ResumenCierre, Venta } from '../types'
 
 type Tab = 'historial' | 'cierre'
@@ -16,6 +18,69 @@ export default function ReportePage() {
   const [cargando, setCargando] = useState(false)
   const [error, setError] = useState('')
   const [printFlash, setPrintFlash] = useState(false)
+  const [reimprimiendoId, setReimprimiendoId] = useState<string | null>(null)
+
+  const { empresa }  = useEmpresaStore()
+  const printer      = usePrinterStore()
+
+  const reimprimir = async (v: Venta) => {
+    setReimprimiendoId(v.id)
+    const dt      = new Date(v.created_at)
+    const fecha   = dt.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+    const hora    = dt.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+    const fechaISO = v.created_at.slice(0, 10)
+    const total   = v.items.reduce((s, i) => s + i.total, 0)
+    const iva     = v.items.reduce((s, i) => s + i.iva, 0)
+
+    const empresaBase = {
+      negocioNombre:     empresa?.razon_social ?? '',
+      titular:           empresa?.titular ?? '',
+      cuit:              empresa?.cuit ?? '',
+      ingBrutos:         empresa?.ing_brutos ?? '',
+      direccion:         empresa?.direccion ?? '',
+      inicioActividades: empresa?.inicio_actividades ?? '',
+      defensaConsumidor: empresa?.defensa_consumidor ?? '',
+      condicionIVA:      empresa?.condicion_iva ?? '',
+    }
+    const itemsData = v.items.map(it => ({
+      descripcion: it.descripcion,
+      precioNeto:  it.precio_neto,
+      total:       it.total,
+    }))
+
+    if (v.cae) {
+      // Reimpresión fiscal completa con QR — ticket idéntico al original
+      await printer.imprimir({
+        ...empresaBase,
+        puntoVenta: empresa?.punto_venta ?? 1,
+        tipoCmp:    v.tipo,
+        numero:     v.numero,
+        items:      itemsData,
+        subtotal:   total - iva,
+        iva,
+        total,
+        metodoPago: v.metodo_pago,
+        cae:        v.cae,
+        caeVto:     v.cae_vto ?? '',
+        fechaHora:  `${fecha}  ${hora}`,
+        fechaISO,
+      })
+    } else {
+      // Sin CAE guardado — imprime copia no fiscal
+      await printer.imprimirNoFiscal({
+        ...empresaBase,
+        items:      itemsData,
+        subtotal:   total - iva,
+        iva,
+        total,
+        metodoPago: v.metodo_pago,
+        titulo:    '*** COPIA DE TICKET ***',
+        subtitulo: v.numero ? `No T. ${v.numero}` : '',
+        fechaHora: `${fecha}  ${hora}`,
+      })
+    }
+    setTimeout(() => setReimprimiendoId(null), 2000)
+  }
 
   const fecha = format(addDays(new Date(), dateOffset), 'yyyy-MM-dd')
   const dateLabel = dateOffset === 0
@@ -189,6 +254,37 @@ export default function ReportePage() {
                             <span>Total</span>
                             <span className="font-mono">{formatPrecio(total)}</span>
                           </div>
+
+                          {/* Reimprimir — solo con impresora conectada */}
+                          {printer.conectado && (
+                            <div style={{ paddingLeft: 98, paddingTop: 8, marginTop: 4, borderTop: '1px solid #F3F4F6' }}>
+                              <button
+                                onClick={() => reimprimir(v)}
+                                disabled={reimprimiendoId === v.id}
+                                className="flex items-center gap-2 font-semibold text-sm rounded-lg transition-colors disabled:opacity-50"
+                                style={{
+                                  padding: '7px 14px', border: '1.5px solid #D1D5DB',
+                                  background: '#F9FAFB', color: '#374151', cursor: 'pointer',
+                                }}
+                                onMouseOver={e => (e.currentTarget.style.borderColor = '#3B72E0')}
+                                onMouseOut={e => (e.currentTarget.style.borderColor = '#D1D5DB')}
+                              >
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                                  <polyline points="6 9 6 2 18 2 18 9"/>
+                                  <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
+                                  <rect x="6" y="14" width="12" height="8"/>
+                                </svg>
+                                {reimprimiendoId === v.id
+                                  ? 'Imprimiendo...'
+                                  : v.cae ? 'Reimprimir ticket fiscal' : 'Reimprimir copia'}
+                              </button>
+                              {v.cae && (
+                                <p className="text-xs text-gray-400" style={{ marginTop: 4 }}>
+                                  CAE: {v.cae}
+                                </p>
+                              )}
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>

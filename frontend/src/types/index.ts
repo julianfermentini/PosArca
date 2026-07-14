@@ -21,6 +21,8 @@ export interface Venta {
   metodo_pago: MetodoPago
   impreso: boolean
   sincronizado: boolean
+  cae?: string
+  cae_vto?: string
   created_at: string
   items: VentaItem[]
 }

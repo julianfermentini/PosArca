@@ -97,6 +97,13 @@ func (h *VentasHandler) Crear(c *gin.Context) {
 		return
 	}
 
+	// Persistir CAE para permitir reimpresión posterior
+	caeVto := caeResult.FchVto
+	h.db.Model(&models.Venta{}).Where("id = ?", ventaID).Updates(map[string]interface{}{
+		"cae":     caeResult.CAE,
+		"cae_vto": &caeVto,
+	})
+
 	go h.imprimirTicket(venta, caeResult)
 
 	c.JSON(http.StatusCreated, gin.H{

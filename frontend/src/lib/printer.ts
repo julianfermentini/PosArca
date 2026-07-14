@@ -92,6 +92,9 @@ export interface DatosTicketFront {
   metodoPago:         string
   cae:                string
   caeVto:             string
+  // Overrides para reimpresión (muestra fecha/hora original)
+  fechaHora?: string   // ej. "14/07/2026  14:18:54"
+  fechaISO?:  string   // ej. "2026-07-14" — para el QR ARCA
 }
 
 // ─── Construye la URL del QR ARCA según RG 5616/2024 ──────────────────────────
@@ -100,7 +103,7 @@ function buildArcaQR(d: DatosTicketFront): string {
   const parts   = d.numero.split('-')
   const ptoVta  = parseInt(parts[0] ?? '1', 10) || d.puntoVenta
   const nroCmp  = parseInt(parts[1] ?? '0', 10) || 0
-  const fecha   = new Date().toISOString().slice(0, 10)
+  const fecha   = d.fechaISO ?? new Date().toISOString().slice(0, 10)
   const payload = {
     ver: 1, fecha, cuit: cuitNum, ptoVta,
     tipoCmp: 83, nroCmp,
@@ -124,9 +127,15 @@ export function buildTicketBytes(d: DatosTicketFront): Uint8Array {
 
   const $ = (n: number) => n.toFixed(2)
 
-  const now   = new Date()
-  const fecha = now.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })
-  const hora  = now.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+  let fechaHoraStr: string
+  if (d.fechaHora) {
+    fechaHoraStr = d.fechaHora
+  } else {
+    const now  = new Date()
+    const fec  = now.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+    const hor  = now.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+    fechaHoraStr = `${fec}  ${hor}`
+  }
 
   const parts = d.numero.split('-')
   const pvStr = (parts[0] ?? '').padStart(5, '0')
@@ -154,7 +163,7 @@ export function buildTicketBytes(d: DatosTicketFront): Uint8Array {
   enc.bold(true).line('A CONSUMIDOR FINAL').bold(false)
   enc.line('Cod. 083 - TIQUE')
   enc.line(`P.V.No ${pvStr} - No T. ${nStr}`)
-  enc.left().twoCol(`Fecha: ${fecha}`, `Hora: ${hora}`, W)
+  enc.left().line(`Fecha: ${fechaHoraStr}`)
 
   enc.sep(W)
 
@@ -208,6 +217,10 @@ export interface DatosTicketNoFiscal {
   iva:                number
   total:              number
   metodoPago:         string
+  // Overrides para copia / reimpresión
+  titulo?:     string   // reemplaza "** TICKET NO FISCAL **"
+  subtitulo?:  string   // ej. "Nº T. 0001-00000042"
+  fechaHora?:  string   // ej. "14/07/2026  14:18:54" — si no se pasa usa now()
 }
 
 export function buildTicketNoFiscalBytes(d: DatosTicketNoFiscal): Uint8Array {
@@ -215,9 +228,15 @@ export function buildTicketNoFiscalBytes(d: DatosTicketNoFiscal): Uint8Array {
   const W   = 32
   const $   = (n: number) => n.toFixed(2)
 
-  const now   = new Date()
-  const fecha = now.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })
-  const hora  = now.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+  let fechaHoraStr: string
+  if (d.fechaHora) {
+    fechaHoraStr = d.fechaHora
+  } else {
+    const now  = new Date()
+    const fec  = now.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+    const hor  = now.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+    fechaHoraStr = `${fec}  ${hor}`
+  }
 
   enc.init()
 
@@ -235,13 +254,14 @@ export function buildTicketNoFiscalBytes(d: DatosTicketNoFiscal): Uint8Array {
   if (d.defensaConsumidor) enc.line(`DEFENSA DEL CONSUMIDOR ${d.defensaConsumidor}`)
   if (d.condicionIVA)      enc.line(`IVA ${d.condicionIVA.toUpperCase()}`)
 
-  // Aviso NO FISCAL destacado
+  // Título (NO FISCAL u otro como COPIA)
   enc.lf(1).sep(W)
-  enc.bold(true).line('** TICKET NO FISCAL **').bold(false)
-  enc.line('Sin CAE - Pendiente ARCA')
+  enc.bold(true).line(d.titulo ?? '** TICKET NO FISCAL **').bold(false)
+  if (d.subtitulo) enc.line(d.subtitulo)
+  else             enc.line('Sin CAE - Pendiente ARCA')
   enc.sep(W)
 
-  enc.left().twoCol(`Fecha: ${fecha}`, `Hora: ${hora}`, W)
+  enc.left().line(`Fecha: ${fechaHoraStr}`)
   enc.sep(W)
 
   // Items (doble altura)
