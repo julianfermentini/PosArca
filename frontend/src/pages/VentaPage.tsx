@@ -580,6 +580,46 @@ export default function VentaPage() {
         >
           {cargando ? 'Emitiendo...' : needsFactura ? 'Emitir Factura' : 'Emitir Ticket'}
         </button>
+
+        {/* Ticket no fiscal / prueba — solo visible con impresora conectada */}
+        {printer.conectado && !needsFactura && (
+          <button
+            onPointerDown={e => {
+              e.preventDefault()
+              if (!puedeEmitir) return
+              printer.imprimirNoFiscal({
+                negocioNombre:     empresa?.razon_social ?? '',
+                titular:           empresa?.titular ?? '',
+                cuit:              empresa?.cuit ?? '',
+                ingBrutos:         empresa?.ing_brutos ?? '',
+                direccion:         empresa?.direccion ?? '',
+                defensaConsumidor: empresa?.defensa_consumidor ?? '',
+                condicionIVA:      empresa?.condicion_iva ?? '',
+                items: store.getItemsParaAPI().map(it => ({
+                  descripcion: it.descripcion,
+                  precioNeto:  it.precio_neto,
+                  total:       calcularTotal(it.precio_neto),
+                })),
+                subtotal:   store.getSubtotal(),
+                iva:        store.getIVA(),
+                total:      store.getTotal(),
+                metodoPago: store.metodoPago ?? 'EFECTIVO',
+              })
+            }}
+            disabled={!puedeEmitir}
+            className="w-full font-semibold text-sm transition-all active:scale-95 touch-manipulation"
+            style={{
+              height: 42,
+              borderRadius: 12,
+              border: '1.5px solid #D1D5DB',
+              cursor: puedeEmitir ? 'pointer' : 'not-allowed',
+              background: puedeEmitir ? '#F9FAFB' : '#F3F4F6',
+              color: puedeEmitir ? '#374151' : '#9CA3AF',
+            }}
+          >
+            Ticket no fiscal / Prueba
+          </button>
+        )}
       </div>
 
       <style>{`
