@@ -215,98 +215,60 @@ export default function VentaPage() {
 
         {paso === 'descripcion' ? (
           <>
-            <div>
-              <p className="text-gray-400 font-bold uppercase tracking-widest mb-2" style={{ fontSize: 10 }}>
-                1. Descripción
-              </p>
-              <input
-                type="text"
-                value={store.descripcionActual}
-                onChange={e => store.setDescripcion(e.target.value)}
-                placeholder="Descripción del producto..."
-                className="w-full border border-gray-200 rounded-xl outline-none transition-all"
-                style={{ padding: '13px 16px', fontSize: 14 }}
-                onFocus={e => (e.target.style.borderColor = '#3B72E0')}
-                onBlur={e => (e.target.style.borderColor = '')}
-                onKeyDown={e => { if (e.key === 'Enter' && store.descripcionActual.trim()) setPaso('precio') }}
-              />
-            </div>
-
-            {sinPrecio.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <p className="text-gray-400 font-bold uppercase tracking-widest" style={{ fontSize: 10 }}>Precio libre</p>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                  {sinPrecio.map(p => (
-                    <button
-                      key={p.id}
-                      onPointerDown={e => { e.preventDefault(); handleProductoClick(p) }}
-                      className="flex flex-col items-start text-white text-left active:scale-95 transition-all touch-manipulation"
-                      style={{
-                        background: freeColorMap[p.id],
-                        borderRadius: 12,
-                        padding: '12px 14px',
-                        minHeight: 64,
-                        border: 'none',
-                        cursor: 'pointer',
-                        gap: 3,
-                      }}
-                    >
-                      <span style={{ fontSize: 14, fontWeight: 800, lineHeight: '1.2' }}>{p.nombre}</span>
-                      <span style={{ fontSize: 12, fontWeight: 500, opacity: 0.85 }}>Ingresar precio</span>
-                    </button>
-                  ))}
-                </div>
+            {productos.length === 0 ? (
+              <div className="flex-1 flex flex-col items-center justify-center text-center text-gray-300 gap-2" style={{ minHeight: 200 }}>
+                <p className="font-semibold" style={{ fontSize: 15 }}>Sin productos</p>
+                <p className="text-sm">Andá a Configuración para agregar.</p>
               </div>
-            )}
+            ) : (
+              <>
+                {sinPrecio.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <p className="text-gray-400 font-bold uppercase tracking-widest" style={{ fontSize: 10 }}>Precio libre</p>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                      {sinPrecio.map(p => (
+                        <button
+                          key={p.id}
+                          onPointerDown={e => { e.preventDefault(); handleProductoClick(p) }}
+                          className="flex flex-col items-start text-white text-left active:scale-95 transition-all touch-manipulation"
+                          style={{ background: freeColorMap[p.id], borderRadius: 14, padding: '18px 16px', minHeight: 90, border: 'none', cursor: 'pointer', gap: 6 }}
+                        >
+                          <span style={{ fontSize: 17, fontWeight: 800, lineHeight: 1.2 }}>{p.nombre}</span>
+                          <span style={{ fontSize: 13, fontWeight: 500, opacity: 0.85 }}>Ingresar precio</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
-            {conPrecio.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <p className="text-gray-400 font-bold uppercase tracking-widest" style={{ fontSize: 10 }}>Precio fijo</p>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                  {conPrecio.map(p => (
-                    <button
-                      key={p.id}
-                      onPointerDown={e => { e.preventDefault(); handleProductoClick(p) }}
-                      className="flex flex-col items-start text-white text-left active:scale-95 transition-all touch-manipulation"
-                      style={{
-                        background: '#64748B',
-                        borderRadius: 12,
-                        padding: '12px 14px',
-                        minHeight: 64,
-                        border: 'none',
-                        cursor: 'pointer',
-                        gap: 3,
-                      }}
-                    >
-                      <span style={{ fontSize: 14, fontWeight: 800, lineHeight: '1.2' }}>{p.nombre}</span>
-                      <span style={{ fontSize: 12, fontWeight: 600, opacity: 0.85 }}>{formatPrecio(p.precio!)}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
+                {conPrecio.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {sinPrecio.length > 0 && (
+                      <p className="text-gray-400 font-bold uppercase tracking-widest" style={{ fontSize: 10 }}>Precio fijo</p>
+                    )}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                      {conPrecio.map(p => (
+                        <button
+                          key={p.id}
+                          onPointerDown={e => { e.preventDefault(); handleProductoClick(p) }}
+                          className="flex flex-col items-start text-white text-left active:scale-95 transition-all touch-manipulation"
+                          style={{ background: '#64748B', borderRadius: 14, padding: '18px 16px', minHeight: 90, border: 'none', cursor: 'pointer', gap: 6 }}
+                        >
+                          <span style={{ fontSize: 17, fontWeight: 800, lineHeight: 1.2 }}>{p.nombre}</span>
+                          <span style={{ fontSize: 14, fontWeight: 600, opacity: 0.85 }}>{formatPrecio(p.precio!)}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
             )}
-
-            <button
-              onPointerDown={e => { e.preventDefault(); if (store.descripcionActual.trim()) setPaso('precio') }}
-              disabled={!store.descripcionActual.trim()}
-              className="w-full font-bold text-white transition-all active:scale-95 touch-manipulation"
-              style={{
-                height: 52,
-                borderRadius: 12,
-                border: 'none',
-                fontSize: 15,
-                cursor: store.descripcionActual.trim() ? 'pointer' : 'not-allowed',
-                background: store.descripcionActual.trim() ? '#3B72E0' : '#93AEDE',
-              }}
-            >
-              Ingresar precio →
-            </button>
           </>
         ) : (
           <>
             <div>
               <p className="text-gray-400 font-bold uppercase tracking-widest mb-2" style={{ fontSize: 10 }}>
-                2. Precio final (IVA incluido)
+                Precio final (IVA incluido)
               </p>
               <div className="border border-gray-200 rounded-xl" style={{ background: '#F9FAFB', padding: '16px 18px' }}>
                 <p className="font-semibold mb-1" style={{ fontSize: 12, color: '#F59E0B' }}>{store.descripcionActual}</p>
@@ -327,7 +289,7 @@ export default function VentaPage() {
               className="text-gray-400 hover:text-gray-600 text-sm text-left transition-colors"
               style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px 0' }}
             >
-              ← Volver a descripción
+              ← Cancelar
             </button>
           </>
         )}

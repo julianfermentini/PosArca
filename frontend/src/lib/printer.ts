@@ -17,9 +17,7 @@ class EscPos {
   left()               { return this.push(0x1b, 0x61, 0x00) }
   right()              { return this.push(0x1b, 0x61, 0x02) }
   bold(on: boolean)    { return this.push(0x1b, 0x45, on ? 1 : 0) }
-  // GS ! n: bits 4-6 = altura (0=1x,1=2x,...), bits 0-2 = ancho (0=1x,1=2x,...)
   doubleH(on: boolean) { return this.push(0x1d, 0x21, on ? 0x01 : 0x00) }
-  size(n: number)      { return this.push(0x1d, 0x21, n) }
   lf(n = 1)            { for (let i = 0; i < n; i++) this.buf.push(0x0a); return this }
   cut()                { return this.push(0x1d, 0x56, 0x01) }
 
@@ -167,27 +165,21 @@ export function buildTicketBytes(d: DatosTicketFront): Uint8Array {
 
   enc.sep(W)
 
-  // ── Items (doble altura para mejor legibilidad) ───────────────────────────────
-  enc.size(0x10)
+  // ── Items ────────────────────────────────────────────────────────────────────
   for (const it of d.items) {
     enc.itemLine(it.descripcion, '  (21)  ', $(it.total), W)
   }
-  enc.size(0x00)
 
   enc.sep(W)
 
-  // ── TOTAL (doble altura + ancho — W=16) ──────────────────────────────────────
-  enc.size(0x11).bold(true).twoCol('TOTAL', $(d.total), 16).bold(false).size(0x00)
+  // ── TOTAL ────────────────────────────────────────────────────────────────────
+  enc.bold(true).twoCol('TOTAL', $(d.total), W).bold(false)
 
-  // ── Pago (doble altura) ──────────────────────────────────────────────────────
-  enc.size(0x10)
-  enc.lf(1).line('RECIBI(MOS)')
+  // ── Pago ─────────────────────────────────────────────────────────────────────
   const pagoLabel: Record<string, string> = {
     EFECTIVO: 'Efectivo', TARJETA: 'Tarjeta', BILLETERA: 'Billetera Digital',
   }
-  enc.twoCol(pagoLabel[d.metodoPago] ?? d.metodoPago, $(d.total), W)
-  enc.bold(true).twoCol('CAMBIO', '0.00', W).bold(false)
-  enc.size(0x00)
+  enc.lf(1).twoCol(pagoLabel[d.metodoPago] ?? d.metodoPago, $(d.total), W)
 
   // ── QR ARCA + CAE (tamaño normal) ───────────────────────────────────────────
   if (d.cae) {
@@ -264,27 +256,21 @@ export function buildTicketNoFiscalBytes(d: DatosTicketNoFiscal): Uint8Array {
   enc.left().line(`Fecha: ${fechaHoraStr}`)
   enc.sep(W)
 
-  // Items (doble altura)
-  enc.size(0x10)
+  // Items
   for (const it of d.items) {
     enc.itemLine(it.descripcion, '  (21)  ', $(it.total), W)
   }
-  enc.size(0x00)
 
   enc.sep(W)
 
-  // TOTAL (doble altura + ancho — W=16)
-  enc.size(0x11).bold(true).twoCol('TOTAL', $(d.total), 16).bold(false).size(0x00)
+  // TOTAL
+  enc.bold(true).twoCol('TOTAL', $(d.total), W).bold(false)
 
-  // Pago (doble altura)
-  enc.size(0x10)
-  enc.lf(1).line('RECIBI(MOS)')
+  // Pago
   const pagoLabel: Record<string, string> = {
     EFECTIVO: 'Efectivo', TARJETA: 'Tarjeta', BILLETERA: 'Billetera Digital',
   }
-  enc.twoCol(pagoLabel[d.metodoPago] ?? d.metodoPago, $(d.total), W)
-  enc.bold(true).twoCol('CAMBIO', '0.00', W).bold(false)
-  enc.size(0x00)
+  enc.lf(1).twoCol(pagoLabel[d.metodoPago] ?? d.metodoPago, $(d.total), W)
 
   enc.lf(1).sep(W)
   enc.center()
