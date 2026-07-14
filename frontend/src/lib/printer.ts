@@ -186,7 +186,9 @@ export function buildTicketBytes(d: DatosTicketFront): Uint8Array {
     enc.lf(1).center()
     enc.qrCode(buildArcaQR(d), 5)
     enc.lf(1).left()
-    enc.twoCol(d.cae, 'V: 01.00', W)
+    const vtoStr = d.caeVto ? d.caeVto.slice(0, 10).split('-').reverse().join('/') : ''
+    enc.line(`CAE: ${d.cae}`)
+    enc.twoCol(`Vto: ${vtoStr}`, 'V: 01.00', W)
     enc.line('CF')
   }
 
