@@ -11,7 +11,7 @@ import { useEmpresaStore }  from './stores/empresaStore'
 import { useProductosStore } from './stores/productosStore'
 
 export default function App() {
-  const { online, pendientes } = useSyncStore()
+  const { online, pendientes, sincronizar, actualizarConteo } = useSyncStore()
   const { token, isAuthenticated, negocioNombre, logout } = useAuthStore()
   const { empresa, configurada, hydrated, cargar } = useEmpresaStore()
   const { cargar: cargarProductos } = useProductosStore()
@@ -22,6 +22,13 @@ export default function App() {
       cargarProductos()
     }
   }, [token]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sincronizar al cargar si ya hay internet y hay ventas pendientes
+  useEffect(() => {
+    actualizarConteo().then(() => {
+      if (navigator.onLine) sincronizar()
+    })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!isAuthenticated()) return <LoginPage />
   if (!hydrated) return null
@@ -87,10 +94,14 @@ export default function App() {
               </span>
             )}
             {online && pendientes > 0 && (
-              <span className="text-white text-xs px-2 py-1 rounded-full font-semibold"
-                style={{ background: '#F59E0B' }}>
+              <button
+                onClick={sincronizar}
+                className="text-white text-xs px-2 py-1 rounded-full font-semibold transition-opacity hover:opacity-80 active:opacity-60"
+                style={{ background: '#F59E0B', border: 'none', cursor: 'pointer' }}
+                title={`${pendientes} venta${pendientes > 1 ? 's' : ''} offline pendiente${pendientes > 1 ? 's' : ''} — tap para sincronizar`}
+              >
                 {pendientes}
-              </span>
+              </button>
             )}
             {online && pendientes === 0 && (
               <span className="text-xs font-medium" style={{ color: '#4ADE80' }}>● Online</span>
