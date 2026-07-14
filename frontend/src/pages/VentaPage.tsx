@@ -89,16 +89,45 @@ export default function VentaPage() {
         mostrarExito('Factura', data.data!.numero)
       } else {
         if (!sync.online) {
+          // Capturar antes de limpiar el carrito
+          const itemsOffline    = store.getItemsParaAPI()
+          const subtotalOffline = store.getSubtotal()
+          const ivaOffline      = store.getIVA()
+          const totalOffline    = store.getTotal()
+          const metodoOffline   = store.metodoPago!
+
           const venta: VentaOffline = {
             id: generarUUID(),
             tipo: 'TICKET',
-            items: store.getItemsParaAPI(),
-            metodo_pago: store.metodoPago!,
+            items: itemsOffline,
+            metodo_pago: metodoOffline,
             created_at: new Date().toISOString(),
             estado_sync: 'PENDIENTE',
           }
           await sync.guardarOffline(venta)
           mostrarExito('Ticket', 'OFFLINE')
+
+          // Imprimir ticket no fiscal para el cliente
+          if (printer.conectado) {
+            printer.imprimirNoFiscal({
+              negocioNombre:     empresa?.razon_social ?? '',
+              titular:           empresa?.titular ?? '',
+              cuit:              empresa?.cuit ?? '',
+              ingBrutos:         empresa?.ing_brutos ?? '',
+              direccion:         empresa?.direccion ?? '',
+              defensaConsumidor: empresa?.defensa_consumidor ?? '',
+              condicionIVA:      empresa?.condicion_iva ?? '',
+              items: itemsOffline.map(it => ({
+                descripcion: it.descripcion,
+                precioNeto:  it.precio_neto,
+                total:       calcularTotal(it.precio_neto),
+              })),
+              subtotal:   subtotalOffline,
+              iva:        ivaOffline,
+              total:      totalOffline,
+              metodoPago: metodoOffline,
+            })
+          }
           return
         }
 

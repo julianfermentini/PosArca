@@ -186,6 +186,83 @@ export function buildTicketBytes(d: DatosTicketFront): Uint8Array {
   return enc.bytes()
 }
 
+// ─── Ticket NO FISCAL (offline / prueba) ─────────────────────────────────────
+
+export interface DatosTicketNoFiscal {
+  negocioNombre:      string
+  titular?:           string
+  cuit:               string
+  ingBrutos?:         string
+  direccion?:         string
+  defensaConsumidor?: string
+  condicionIVA?:      string
+  items:              Array<{ descripcion: string; precioNeto: number; total: number }>
+  subtotal:           number
+  iva:                number
+  total:              number
+  metodoPago:         string
+}
+
+export function buildTicketNoFiscalBytes(d: DatosTicketNoFiscal): Uint8Array {
+  const enc = new EscPos()
+  const W   = 32
+  const $   = (n: number) => n.toFixed(2)
+
+  const now   = new Date()
+  const fecha = now.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  const hora  = now.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+
+  enc.init()
+
+  // Encabezado idéntico al ticket fiscal
+  enc.center()
+    .bold(true).doubleH(true).line(d.negocioNombre.toUpperCase()).doubleH(false).bold(false)
+
+  if (d.titular && d.titular.toUpperCase() !== d.negocioNombre.toUpperCase()) {
+    enc.line(d.titular.toUpperCase())
+  }
+
+  enc.line(`C.U.I.T. Nro.: ${fmtCuit(d.cuit)}`)
+  if (d.ingBrutos)         enc.line(`Ing. Brutos: ${d.ingBrutos}`)
+  if (d.direccion)         enc.line(d.direccion.toUpperCase())
+  if (d.defensaConsumidor) enc.line(`DEFENSA DEL CONSUMIDOR ${d.defensaConsumidor}`)
+  if (d.condicionIVA)      enc.line(`IVA ${d.condicionIVA.toUpperCase()}`)
+
+  // Aviso NO FISCAL destacado
+  enc.lf(1).sep(W)
+  enc.bold(true).line('** TICKET NO FISCAL **').bold(false)
+  enc.line('Sin CAE - Pendiente ARCA')
+  enc.sep(W)
+
+  enc.left().twoCol(`Fecha: ${fecha}`, `Hora: ${hora}`, W)
+  enc.sep(W)
+
+  // Items
+  for (const it of d.items) {
+    enc.itemLine(it.descripcion, '  (21)  ', $(it.total), W)
+  }
+
+  enc.sep(W)
+
+  // Totales
+  enc.bold(true).twoCol('TOTAL', $(d.total), W).bold(false)
+
+  enc.lf(1).line('RECIBI(MOS)')
+  const pagoLabel: Record<string, string> = {
+    EFECTIVO: 'Efectivo', TARJETA: 'Tarjeta', BILLETERA: 'Billetera Digital',
+  }
+  enc.twoCol(pagoLabel[d.metodoPago] ?? d.metodoPago, $(d.total), W)
+  enc.bold(true).twoCol('CAMBIO', '0.00', W).bold(false)
+
+  enc.lf(1).sep(W)
+  enc.center()
+  enc.bold(true).line('NO VALIDO COMO').bold(false)
+  enc.bold(true).line('COMPROBANTE FISCAL ARCA').bold(false)
+
+  enc.lf(4).cut()
+  return enc.bytes()
+}
+
 // ─── Conexión WebUSB ──────────────────────────────────────────────────────────
 
 export interface PrinterInfo {
