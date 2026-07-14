@@ -496,7 +496,7 @@ export default function VentaPage() {
         </div>
 
         {/* ── Bottom: always visible ── */}
-        <div style={{ flexShrink: 0, padding: '0 24px 32px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ flexShrink: 0, padding: '0 24px max(32px, env(safe-area-inset-bottom, 32px))', display: 'flex', flexDirection: 'column', gap: 10 }}>
           {/* Success toast */}
           {emitido && (
             <div className="rounded-xl border flex flex-col" style={{
