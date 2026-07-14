@@ -379,7 +379,7 @@ export default function VentaPage() {
         style={{ borderColor: 'rgba(0,0,0,0.06)', ...(window.innerWidth >= 1024 ? { width: 360 } : {}), overflow: 'hidden' }}>
 
         {/* Scrollable content area */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: 24, display: 'flex', flexDirection: 'column', gap: 18 }}>
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 24, display: 'flex', flexDirection: 'column', gap: 18 }}>
           <h2 className="font-bold text-gray-900" style={{ fontSize: 20, margin: 0 }}>Totales</h2>
 
           {/* Amounts */}
