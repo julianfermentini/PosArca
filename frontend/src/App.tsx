@@ -23,11 +23,20 @@ export default function App() {
     }
   }, [token]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Sincronizar al cargar si ya hay internet y hay ventas pendientes
+  // Detectar online/offline y sincronizar
   useEffect(() => {
+    const goOnline  = () => { useSyncStore.getState().setOnline(true) }
+    const goOffline = () => { useSyncStore.getState().setOnline(false) }
+    window.addEventListener('online',  goOnline)
+    window.addEventListener('offline', goOffline)
+    // Sincronizar al abrir si ya hay internet
     actualizarConteo().then(() => {
       if (navigator.onLine) sincronizar()
     })
+    return () => {
+      window.removeEventListener('online',  goOnline)
+      window.removeEventListener('offline', goOffline)
+    }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!isAuthenticated()) return <LoginPage />
