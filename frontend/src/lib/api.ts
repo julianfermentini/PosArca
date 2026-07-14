@@ -69,19 +69,27 @@ export const syncApi = {
 
 export interface Empresa {
   id?: string
-  razon_social: string
-  cuit: string
-  punto_venta: number
-  direccion: string
-  telefono: string
-  condicion_iva: string
+  razon_social:        string
+  titular:             string
+  cuit:                string
+  punto_venta:         number
+  direccion:           string
+  telefono:            string
+  condicion_iva:       string
+  ing_brutos:          string
+  inicio_actividades:  string
+  defensa_consumidor:  string
 }
 
 export interface UpdateEmpresaPayload {
-  razon_social: string
-  direccion: string
-  telefono: string
-  condicion_iva: string
+  razon_social:        string
+  titular:             string
+  direccion:           string
+  telefono:            string
+  condicion_iva:       string
+  ing_brutos:          string
+  inicio_actividades:  string
+  defensa_consumidor:  string
 }
 
 export const empresaApi = {

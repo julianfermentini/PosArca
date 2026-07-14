@@ -120,12 +120,18 @@ export default function VentaPage() {
           // Imprimir desde el tablet si hay impresora conectada
           if (printer.conectado) {
             printer.imprimir({
-              negocioNombre: empresa?.razon_social ?? '',
-              cuit:          empresa?.cuit ?? '',
-              puntoVenta:    empresa?.punto_venta ?? 1,
-              tipoCmp:       'TICKET',
-              numero:        data.data.numero,
-              items:         itemsSnap.map(it => ({
+              negocioNombre:      empresa?.razon_social ?? '',
+              titular:            empresa?.titular ?? '',
+              cuit:               empresa?.cuit ?? '',
+              ingBrutos:          empresa?.ing_brutos ?? '',
+              direccion:          empresa?.direccion ?? '',
+              inicioActividades:  empresa?.inicio_actividades ?? '',
+              defensaConsumidor:  empresa?.defensa_consumidor ?? '',
+              condicionIVA:       empresa?.condicion_iva ?? '',
+              puntoVenta:         empresa?.punto_venta ?? 1,
+              tipoCmp:            'TICKET',
+              numero:             data.data.numero,
+              items:              itemsSnap.map(it => ({
                 descripcion: it.descripcion,
                 precioNeto:  it.precio_neto,
                 total:       calcularTotal(it.precio_neto),

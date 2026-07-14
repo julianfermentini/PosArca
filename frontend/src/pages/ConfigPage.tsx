@@ -134,20 +134,27 @@ function SeccionImpresora() {
 function SeccionEmpresa() {
   const { empresa, guardar } = useEmpresaStore()
 
-  const [nombre, setNombre]   = useState(empresa?.razon_social ?? '')
-  const [dir,    setDir]      = useState(empresa?.direccion ?? '')
-  const [tel,    setTel]      = useState(empresa?.telefono ?? '')
-  const [iva,    setIva]      = useState(empresa?.condicion_iva ?? 'Responsable Inscripto')
-  const [saving, setSaving]   = useState(false)
-  const [ok,     setOk]       = useState(false)
+  const [nombre,    setNombre]    = useState(empresa?.razon_social ?? '')
+  const [titular,   setTitular]   = useState(empresa?.titular ?? '')
+  const [dir,       setDir]       = useState(empresa?.direccion ?? '')
+  const [tel,       setTel]       = useState(empresa?.telefono ?? '')
+  const [iva,       setIva]       = useState(empresa?.condicion_iva ?? 'Responsable Inscripto')
+  const [iibb,      setIibb]      = useState(empresa?.ing_brutos ?? '')
+  const [inicio,    setInicio]    = useState(empresa?.inicio_actividades ?? '')
+  const [defensa,   setDefensa]   = useState(empresa?.defensa_consumidor ?? '')
+  const [saving,    setSaving]    = useState(false)
+  const [ok,        setOk]        = useState(false)
 
-  // Sincronizar si empresa carga después del montaje
   useEffect(() => {
     if (empresa) {
       setNombre(empresa.razon_social)
+      setTitular(empresa.titular ?? '')
       setDir(empresa.direccion)
       setTel(empresa.telefono)
       setIva(empresa.condicion_iva)
+      setIibb(empresa.ing_brutos ?? '')
+      setInicio(empresa.inicio_actividades ?? '')
+      setDefensa(empresa.defensa_consumidor ?? '')
     }
   }, [empresa?.razon_social])
 
@@ -155,7 +162,16 @@ function SeccionEmpresa() {
     e.preventDefault()
     if (!nombre.trim()) return
     setSaving(true)
-    await guardar({ razon_social: nombre.trim(), direccion: dir.trim(), telefono: tel.trim(), condicion_iva: iva })
+    await guardar({
+      razon_social:       nombre.trim(),
+      titular:            titular.trim(),
+      direccion:          dir.trim(),
+      telefono:           tel.trim(),
+      condicion_iva:      iva,
+      ing_brutos:         iibb.trim(),
+      inicio_actividades: inicio.trim(),
+      defensa_consumidor: defensa.trim(),
+    })
     setSaving(false)
     setOk(true)
     setTimeout(() => setOk(false), 2500)
@@ -163,29 +179,43 @@ function SeccionEmpresa() {
 
   return (
     <Card style={{ marginBottom: 16 }}>
-      <SectionTitle sub="Aparecen en el encabezado de tickets y facturas PDF.">
+      <SectionTitle sub="Aparecen en el encabezado de tickets impresos (requerido por ARCA).">
         Datos del negocio
       </SectionTitle>
 
       <form onSubmit={handleSave} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <div style={{ gridColumn: '1 / -1' }}>
-          <label className={labelCls} style={labelStyle}>Nombre / Razón social *</label>
+          <label className={labelCls} style={labelStyle}>Nombre del negocio / Razón social *</label>
           <input type="text" value={nombre} onChange={e => setNombre(e.target.value)}
             placeholder="Mi Bar & Restó" required className={inputCls} style={inputSty}
             onFocus={onFocusBlue} onBlur={onBlurReset} />
         </div>
 
         <div style={{ gridColumn: '1 / -1' }}>
-          <label className={labelCls} style={labelStyle}>Dirección</label>
+          <label className={labelCls} style={labelStyle}>Titular / Responsable</label>
+          <input type="text" value={titular} onChange={e => setTitular(e.target.value)}
+            placeholder="García Juan Carlos" className={inputCls} style={inputSty}
+            onFocus={onFocusBlue} onBlur={onBlurReset} />
+        </div>
+
+        <div style={{ gridColumn: '1 / -1' }}>
+          <label className={labelCls} style={labelStyle}>Dirección comercial</label>
           <input type="text" value={dir} onChange={e => setDir(e.target.value)}
-            placeholder="Av. San Martín 1234, Mendoza" className={inputCls} style={inputSty}
+            placeholder="Belgrano 86 – Capital – Mendoza" className={inputCls} style={inputSty}
             onFocus={onFocusBlue} onBlur={onBlurReset} />
         </div>
 
         <div>
-          <label className={labelCls} style={labelStyle}>Teléfono</label>
-          <input type="tel" value={tel} onChange={e => setTel(e.target.value)}
-            placeholder="+54 261 000-0000" className={inputCls} style={inputSty}
+          <label className={labelCls} style={labelStyle}>Ingresos Brutos (IIBB)</label>
+          <input type="text" value={iibb} onChange={e => setIibb(e.target.value)}
+            placeholder="0108229" className={inputCls} style={inputSty}
+            onFocus={onFocusBlue} onBlur={onBlurReset} />
+        </div>
+
+        <div>
+          <label className={labelCls} style={labelStyle}>Inicio de actividades</label>
+          <input type="text" value={inicio} onChange={e => setInicio(e.target.value)}
+            placeholder="01/01/2020" className={inputCls} style={inputSty}
             onFocus={onFocusBlue} onBlur={onBlurReset} />
         </div>
 
@@ -198,6 +228,20 @@ function SeccionEmpresa() {
             <option>Monotributista</option>
             <option>Exento</option>
           </select>
+        </div>
+
+        <div>
+          <label className={labelCls} style={labelStyle}>Teléfono</label>
+          <input type="tel" value={tel} onChange={e => setTel(e.target.value)}
+            placeholder="+54 261 000-0000" className={inputCls} style={inputSty}
+            onFocus={onFocusBlue} onBlur={onBlurReset} />
+        </div>
+
+        <div style={{ gridColumn: '1 / -1' }}>
+          <label className={labelCls} style={labelStyle}>Defensa del consumidor (opcional)</label>
+          <input type="text" value={defensa} onChange={e => setDefensa(e.target.value)}
+            placeholder="MZA 0800-222-6678" className={inputCls} style={inputSty}
+            onFocus={onFocusBlue} onBlur={onBlurReset} />
         </div>
 
         <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 12, marginTop: 4 }}>

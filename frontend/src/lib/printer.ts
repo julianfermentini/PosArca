@@ -1,6 +1,4 @@
-// ─── ESC/POS encoder mínimo para impresoras térmicas 58mm ─────────────────────
-// Sin dependencias externas. Codifica texto en cp1252 para soportar caracteres
-// españoles que la mayoría de las impresoras térmicas baratas requieren.
+// ─── ESC/POS encoder mínimo para impresoras térmicas ──────────────────────────
 
 const CP1252: Record<string, number> = {
   á: 0xe1, é: 0xe9, í: 0xed, ó: 0xf3, ú: 0xfa,
@@ -14,14 +12,14 @@ class EscPos {
 
   private push(...b: number[]) { this.buf.push(...b); return this }
 
-  init()                { return this.push(0x1b, 0x40) }
-  center()              { return this.push(0x1b, 0x61, 0x01) }
-  left()                { return this.push(0x1b, 0x61, 0x00) }
-  right()               { return this.push(0x1b, 0x61, 0x02) }
-  bold(on: boolean)     { return this.push(0x1b, 0x45, on ? 1 : 0) }
-  doubleH(on: boolean)  { return this.push(0x1d, 0x21, on ? 0x01 : 0x00) }
-  lf(n = 1)             { for (let i = 0; i < n; i++) this.buf.push(0x0a); return this }
-  cut()                 { return this.push(0x1d, 0x56, 0x01) }
+  init()               { return this.push(0x1b, 0x40) }
+  center()             { return this.push(0x1b, 0x61, 0x01) }
+  left()               { return this.push(0x1b, 0x61, 0x00) }
+  right()              { return this.push(0x1b, 0x61, 0x02) }
+  bold(on: boolean)    { return this.push(0x1b, 0x45, on ? 1 : 0) }
+  doubleH(on: boolean) { return this.push(0x1d, 0x21, on ? 0x01 : 0x00) }
+  lf(n = 1)            { for (let i = 0; i < n; i++) this.buf.push(0x0a); return this }
+  cut()                { return this.push(0x1d, 0x56, 0x01) }
 
   text(s: string) {
     for (const ch of s) {
@@ -32,15 +30,40 @@ class EscPos {
   }
 
   line(s: string) { return this.text(s).lf() }
+  sep(w = 32)     { return this.text('-'.repeat(w)).lf() }
 
-  sep(w = 32) { return this.text('-'.repeat(w)).lf() }
+  // Dos columnas en W chars: izquierda y derecha
+  twoCol(left: string, right: string, w = 32) {
+    const spaces = Math.max(1, w - left.length - right.length)
+    return this.text(left + ' '.repeat(spaces) + right).lf()
+  }
 
-  // Descripción alineada a la izquierda, precio a la derecha, en W chars total
-  itemLine(desc: string, price: string, w = 32) {
-    const maxDesc = w - price.length - 1
-    const d = desc.slice(0, maxDesc)
-    const spaces = w - d.length - price.length
-    return this.text(d + ' '.repeat(Math.max(1, spaces)) + price).lf()
+  // Línea de item: descripción izquierda, "(IVA)  precio" derecha
+  itemLine(desc: string, ivaLabel: string, price: string, w = 32) {
+    const right = ivaLabel + price
+    const maxDesc = Math.max(1, w - right.length - 1)
+    const d = desc.slice(0, maxDesc).toUpperCase()
+    const spaces = Math.max(1, w - d.length - right.length)
+    return this.text(d + ' '.repeat(spaces) + right).lf()
+  }
+
+  // QR code via GS ( k (ESC/POS estándar)
+  qrCode(data: string, size = 5) {
+    const bytes = Array.from(data).map(c => c.charCodeAt(0))
+    const len = bytes.length + 3
+    const pL = len & 0xff
+    const pH = (len >> 8) & 0xff
+    // Model 2
+    this.push(0x1d, 0x28, 0x6b, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00)
+    // Module size
+    this.push(0x1d, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x43, size)
+    // Error correction level M
+    this.push(0x1d, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x45, 0x32)
+    // Store data
+    this.push(0x1d, 0x28, 0x6b, pL, pH, 0x31, 0x50, 0x30, ...bytes)
+    // Print
+    this.push(0x1d, 0x28, 0x6b, 0x03, 0x00, 0x31, 0x51, 0x30)
+    return this
   }
 
   bytes() { return new Uint8Array(this.buf) }
@@ -49,61 +72,117 @@ class EscPos {
 // ─── Datos que necesita el ticket ─────────────────────────────────────────────
 
 export interface DatosTicketFront {
-  negocioNombre: string
-  cuit:          string
-  puntoVenta:    number
-  tipoCmp:       string        // 'TICKET' | 'FACTURA'
-  numero:        string
-  items:         Array<{ descripcion: string; precioNeto: number; total: number }>
-  subtotal:      number
-  iva:           number
-  total:         number
-  metodoPago:    string
-  cae:           string
-  caeVto:        string        // 'YYYY-MM-DD'
+  negocioNombre:      string
+  titular?:           string
+  cuit:               string
+  ingBrutos?:         string
+  direccion?:         string
+  inicioActividades?: string
+  defensaConsumidor?: string
+  condicionIVA?:      string
+  puntoVenta:         number
+  tipoCmp:            string
+  numero:             string
+  items:              Array<{ descripcion: string; precioNeto: number; total: number }>
+  subtotal:           number
+  iva:                number
+  total:              number
+  metodoPago:         string
+  cae:                string
+  caeVto:             string
 }
 
+// ─── Construye la URL del QR ARCA según RG 5616/2024 ──────────────────────────
+function buildArcaQR(d: DatosTicketFront): string {
+  const cuitNum = parseInt(d.cuit.replace(/\D/g, ''), 10) || 0
+  const parts   = d.numero.split('-')
+  const ptoVta  = parseInt(parts[0] ?? '1', 10) || d.puntoVenta
+  const nroCmp  = parseInt(parts[1] ?? '0', 10) || 0
+  const fecha   = new Date().toISOString().slice(0, 10)
+  const payload = {
+    ver: 1, fecha, cuit: cuitNum, ptoVta,
+    tipoCmp: 83, nroCmp,
+    importe: d.total, moneda: 'PES', ctz: 1,
+    tipoDocRec: 99, nroDocRec: 0,
+    tipoCodAut: 'E',
+    codAut: parseInt(d.cae, 10) || 0,
+  }
+  return `https://www.afip.gov.ar/fe/qr/?p=${btoa(JSON.stringify(payload))}`
+}
+
+function fmtCuit(cuit: string): string {
+  const c = cuit.replace(/\D/g, '')
+  return c.length === 11 ? `${c.slice(0, 2)}-${c.slice(2, 10)}-${c.slice(10)}` : cuit
+}
+
+// ─── Genera los bytes ESC/POS del ticket fiscal (formato ARCA) ────────────────
 export function buildTicketBytes(d: DatosTicketFront): Uint8Array {
   const enc = new EscPos()
-  const $ = (n: number) => `$${n.toFixed(2)}`
-  const fmtDate = (iso: string) => {
-    const [y, m, dd] = iso.split('-')
-    return `${dd}/${m}/${y}`
-  }
-  const now = new Date()
-  const hora = now.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })
-  const fecha = fmtDate(now.toISOString().slice(0, 10))
+  const W   = 32
+
+  const $ = (n: number) => n.toFixed(2)
+
+  const now   = new Date()
+  const fecha = now.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  const hora  = now.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+
+  const parts = d.numero.split('-')
+  const pvStr = (parts[0] ?? '').padStart(5, '0')
+  const nStr  = (parts[1] ?? '').padStart(8, '0')
 
   enc.init()
-  enc.center().doubleH(true).bold(true).line(d.negocioNombre)
-  enc.doubleH(false).bold(false)
-  enc.line(`CUIT: ${d.cuit}`)
-  enc.line(`${d.tipoCmp === 'TICKET' ? 'Ticket' : 'Factura'} N°: ${d.numero}`)
-  enc.line(`${fecha} ${hora}`)
 
-  enc.left().sep()
+  // ── Encabezado ──────────────────────────────────────────────────────────────
+  enc.center()
+    .bold(true).doubleH(true).line(d.negocioNombre.toUpperCase()).doubleH(false).bold(false)
 
-  for (const it of d.items) {
-    enc.itemLine(it.descripcion, $(it.total))
+  if (d.titular && d.titular.toUpperCase() !== d.negocioNombre.toUpperCase()) {
+    enc.line(d.titular.toUpperCase())
   }
 
-  enc.sep()
-  enc.right()
-  enc.line(`Subtotal neto:   ${$(d.subtotal)}`)
-  enc.line(`IVA 21%:         ${$(d.iva)}`)
-  enc.bold(true).line(`TOTAL:           ${$(d.total)}`).bold(false)
-  enc.line(`Pago: ${d.metodoPago}`)
+  enc.line(`C.U.I.T. Nro.: ${fmtCuit(d.cuit)}`)
 
-  enc.left().sep()
-  enc.line(`CAE: ${d.cae}`)
-  enc.line(`Vto: ${fmtDate(d.caeVto)}`)
-  enc.sep()
+  if (d.ingBrutos)         enc.line(`Ing. Brutos: ${d.ingBrutos}`)
+  if (d.direccion)         enc.line(d.direccion.toUpperCase())
+  if (d.defensaConsumidor) enc.line(`DEFENSA DEL CONSUMIDOR ${d.defensaConsumidor}`)
+  if (d.inicioActividades) enc.line(`Inicio de Actividades: ${d.inicioActividades}`)
+  if (d.condicionIVA)      enc.line(`IVA ${d.condicionIVA.toUpperCase()}`)
 
-  enc.center().lf()
-  enc.line('Gracias por su compra!')
-  enc.lf(4)
-  enc.cut()
+  enc.lf(1)
+  enc.bold(true).line('A CONSUMIDOR FINAL').bold(false)
+  enc.line('Cod. 083 - TIQUE')
+  enc.line(`P.V.No ${pvStr} - No T. ${nStr}`)
+  enc.left().twoCol(`Fecha: ${fecha}`, `Hora: ${hora}`, W)
 
+  enc.sep(W)
+
+  // ── Items ────────────────────────────────────────────────────────────────────
+  for (const it of d.items) {
+    enc.itemLine(it.descripcion, '  (21)  ', $(it.total), W)
+  }
+
+  enc.sep(W)
+
+  // ── Totales ──────────────────────────────────────────────────────────────────
+  enc.bold(true).twoCol('TOTAL', $(d.total), W).bold(false)
+
+  enc.lf(1).line('RECIBI(MOS)')
+  const pagoLabel: Record<string, string> = {
+    EFECTIVO: 'Efectivo', TARJETA: 'Tarjeta', BILLETERA: 'Billetera Digital',
+  }
+  enc.twoCol(pagoLabel[d.metodoPago] ?? d.metodoPago, $(d.total), W)
+  enc.bold(true).twoCol('CAMBIO', '0.00', W).bold(false)
+
+  // ── QR ARCA + CAE ────────────────────────────────────────────────────────────
+  if (d.cae) {
+    enc.lf(1).center()
+    enc.qrCode(buildArcaQR(d), 5)
+    enc.lf(1).left()
+    enc.twoCol(d.cae, 'V: 01.00', W)
+    enc.line('CF')
+  }
+
+  enc.lf(4).cut()
   return enc.bytes()
 }
 

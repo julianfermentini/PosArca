@@ -28,10 +28,14 @@ func (h *EmpresaHandler) Get(c *gin.Context) {
 }
 
 type UpdateEmpresaReq struct {
-	RazonSocial  string `json:"razon_social" binding:"required"`
-	Direccion    string `json:"direccion"`
-	Telefono     string `json:"telefono"`
-	CondicionIVA string `json:"condicion_iva"`
+	RazonSocial       string `json:"razon_social" binding:"required"`
+	Titular           string `json:"titular"`
+	Direccion         string `json:"direccion"`
+	Telefono          string `json:"telefono"`
+	CondicionIVA      string `json:"condicion_iva"`
+	IngBrutos         string `json:"ing_brutos"`
+	InicioActividades string `json:"inicio_actividades"`
+	DefensaConsumidor string `json:"defensa_consumidor"`
 }
 
 // Update guarda (upsert) los datos del negocio.
@@ -56,9 +60,13 @@ func (h *EmpresaHandler) Update(c *gin.Context) {
 	}
 
 	emp.RazonSocial = req.RazonSocial
+	emp.Titular = req.Titular
 	emp.Direccion = req.Direccion
 	emp.Telefono = req.Telefono
 	emp.CondicionIVA = req.CondicionIVA
+	emp.IngBrutos = req.IngBrutos
+	emp.InicioActividades = req.InicioActividades
+	emp.DefensaConsumidor = req.DefensaConsumidor
 
 	if err := h.db.Save(&emp).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
