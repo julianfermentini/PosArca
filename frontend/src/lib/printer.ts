@@ -104,7 +104,7 @@ function buildArcaQR(d: DatosTicketFront): string {
   const fecha   = d.fechaISO ?? new Date().toISOString().slice(0, 10)
   const payload = {
     ver: 1, fecha, cuit: cuitNum, ptoVta,
-    tipoCmp: 83, nroCmp,
+    tipoCmp: 6, nroCmp,
     importe: d.total, moneda: 'PES', ctz: 1,
     tipoDocRec: 99, nroDocRec: 0,
     tipoCodAut: 'E',
@@ -170,7 +170,7 @@ export function buildTicketBytes(d: DatosTicketFront): Uint8Array {
 
   // ── Tipo y número de comprobante ──────────────────────────────────────────────
   enc.left()
-  enc.bold(true).twoCol('TIQUE (CODIGO 083)', `NUMERO ${pvStr}-${nStr}`, W).bold(false)
+  enc.bold(true).twoCol('FACTURA B (CODIGO 06)', `NUMERO ${pvStr}-${nStr}`, W).bold(false)
   enc.line(`FECHA: ${fechaHoraStr}  ** ORIG **`)
   enc.line('CLIENTE/DOM: CONSUMIDOR FINAL')
   enc.bold(true).line('A CONSUMIDOR FINAL ****').bold(false)
