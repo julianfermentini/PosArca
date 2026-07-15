@@ -158,64 +158,54 @@ export function buildTicketBytes(d: DatosTicketFront): Uint8Array {
   if (d.titular && d.titular.toUpperCase() !== d.negocioNombre.toUpperCase()) {
     enc.line(d.titular.toUpperCase())
   }
-  enc.line(`CUIT ${fmtCuit(d.cuit)}`)
-  if (d.condicionIVA)      enc.line(`IVA ${d.condicionIVA.toUpperCase()}`)
-  if (d.ingBrutos)         enc.line(`IIBB: ${d.ingBrutos}`)
-  if (d.inicioActividades) enc.line(`INICIO ACTIVIDADES: ${d.inicioActividades}`)
-  if (d.direccion)         enc.line(d.direccion.toUpperCase())
-  enc.lf(1)
+  // CUIT e IVA en la misma línea
+  if (d.condicionIVA) enc.twoCol(`CUIT ${fmtCuit(d.cuit)}`, `IVA ${d.condicionIVA.toUpperCase()}`, W)
+  else                enc.line(`CUIT ${fmtCuit(d.cuit)}`)
+  // IIBB e Inicio de Actividades en la misma línea
+  if (d.ingBrutos && d.inicioActividades)
+    enc.twoCol(`IIBB: ${d.ingBrutos}`, `INICIO: ${d.inicioActividades}`, W)
+  else if (d.ingBrutos)         enc.line(`IIBB: ${d.ingBrutos}`)
+  else if (d.inicioActividades) enc.line(`INICIO ACTIVIDADES: ${d.inicioActividades}`)
+  if (d.direccion) enc.line(d.direccion.toUpperCase())
 
   // ── Tipo y número de comprobante ──────────────────────────────────────────────
   enc.left()
-  enc.bold(true).line('TIQUE (CODIGO 083)').bold(false)
-  enc.bold(true).line(`NUMERO ${pvStr}-${nStr}`).bold(false)
-  enc.line(`FECHA DE EMISION: ${fechaHoraStr}`)
-  enc.line('** ORIGINAL **')
-  enc.line('CLIENTE: CONSUMIDOR FINAL')
-  enc.line('DOM: CONSUMIDOR FINAL')
-  enc.lf(1)
+  enc.bold(true).twoCol('TIQUE (CODIGO 083)', `NUMERO ${pvStr}-${nStr}`, W).bold(false)
+  enc.line(`FECHA: ${fechaHoraStr}  ** ORIG **`)
+  enc.line('CLIENTE/DOM: CONSUMIDOR FINAL')
   enc.bold(true).line('A CONSUMIDOR FINAL ****').bold(false)
   enc.sep(W)
 
-  // ── Items (dos líneas por producto: cantidad×precio / descripción+total) ───────
+  // ── Items (dos líneas por producto: cantidad×precio(21) / descripción+total) ───
   for (const g of grupos) {
     enc.line(`${g.qty} x  ${$(g.totalUnit)}  (21)`)
     enc.twoCol(g.descripcion.slice(0, W - 9), $(g.totalLinea), W)
   }
   enc.sep(W)
 
-  // ── TOTAL ─────────────────────────────────────────────────────────────────────
+  // ── TOTAL + Pago ──────────────────────────────────────────────────────────────
   enc.bold(true).twoCol('TOTAL', `$ ${$(d.total)}`, W).bold(false)
-
-  // ── Pago ──────────────────────────────────────────────────────────────────────
   const pagoLabel: Record<string, string> = {
     EFECTIVO: 'EFECTIVO', TARJETA: 'TARJETA', BILLETERA: 'BILLETERA DIGITAL',
   }
-  enc.lf(1).line(`FORMA DE PAGO: ${pagoLabel[d.metodoPago] ?? d.metodoPago}`)
-
-  // ── Orientación al consumidor ─────────────────────────────────────────────────
-  if (d.defensaConsumidor) {
-    enc.line(`ORIENTACION AL CONSUMIDOR ${d.defensaConsumidor}`)
-  }
+  enc.line(`FORMA DE PAGO: ${pagoLabel[d.metodoPago] ?? d.metodoPago}`)
+  if (d.defensaConsumidor) enc.line(`ORIENTACION AL CONSUMIDOR ${d.defensaConsumidor}`)
 
   // ── Autorización ARCA + QR ────────────────────────────────────────────────────
   if (d.cae) {
     const vtoStr = d.caeVto ? d.caeVto.slice(0, 10).split('-').reverse().join('/') : ''
-    enc.lf(1).center()
+    enc.center()
     enc.bold(true).line('* COMP.ELECT. AUTORIZADO POR ARCA *').bold(false)
-    enc.line(`C.A.E.: ${d.cae}`)
-    enc.line(`VENC. C.A.E.: ${vtoStr}`)
+    // CAE y vencimiento en una sola línea (39 chars — cabe en 42)
+    enc.line(`C.A.E.: ${d.cae}  VTO: ${vtoStr}`)
     enc.line('CODIGO QR ARCA  R.G. 4892/2020')
-    enc.lf(1)
     enc.qrCode(buildArcaQR(d), 5)
-    enc.lf(1).left().sep(W)
-    // Régimen de Transparencia Fiscal al Consumidor — Ley 27.743 / RG ARCA 5614/2024
-    enc.line('REGIMEN DE TRANSPARENCIA FISCAL')
-    enc.line('AL CONSUMIDOR LEY 27.743')
+    enc.lf(1).left()
+    // Transparencia Fiscal al Consumidor — Ley 27.743 / RG ARCA 5614/2024
+    enc.line('REGIMEN TRANSP.FISCAL AL CONS. LEY 27.743')
     enc.line('RG.ARCA 5614/24')
     enc.twoCol('IVA CONTENIDO', `$ ${$(d.iva)}`, W)
-    enc.line('SOLO SON INFORMADOS')
-    enc.line('IMPUESTOS NACIONALES')
+    enc.line('SOLO SON INFORMADOS IMPUESTOS NACIONALES')
   }
 
   enc.lf(4).cut()
