@@ -118,78 +118,104 @@ function fmtCuit(cuit: string): string {
   return c.length === 11 ? `${c.slice(0, 2)}-${c.slice(2, 10)}-${c.slice(10)}` : cuit
 }
 
-// ─── Genera los bytes ESC/POS del ticket fiscal (formato ARCA) ────────────────
+// ─── Genera los bytes ESC/POS del ticket fiscal (formato ARCA / RG 5614/2024) ─
 export function buildTicketBytes(d: DatosTicketFront): Uint8Array {
   const enc = new EscPos()
-  const W   = 32
+  const W   = 42   // 80mm paper — ~42 chars en fuente normal
 
-  const $ = (n: number) => n.toFixed(2)
+  // Formato argentino: punto de miles, coma decimal
+  const $ = (n: number) => n.toFixed(2).replace('.', ',')
 
   let fechaHoraStr: string
   if (d.fechaHora) {
     fechaHoraStr = d.fechaHora
   } else {
-    const now  = new Date()
-    const fec  = now.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })
-    const hor  = now.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
-    fechaHoraStr = `${fec}  ${hor}`
+    const now = new Date()
+    const fec = now.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+    const hor = now.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+    fechaHoraStr = `${fec} ${hor}`
   }
 
   const parts = d.numero.split('-')
   const pvStr = (parts[0] ?? '').padStart(5, '0')
   const nStr  = (parts[1] ?? '').padStart(8, '0')
 
+  // Agrupar items idénticos para mostrar cantidad en el ticket
+  type Grupo = { descripcion: string; totalUnit: number; qty: number; totalLinea: number }
+  const grupos: Grupo[] = []
+  for (const it of d.items) {
+    const g = grupos.find(x => x.descripcion === it.descripcion && Math.abs(x.totalUnit - it.total) < 0.01)
+    if (g) { g.qty++; g.totalLinea += it.total }
+    else grupos.push({ descripcion: it.descripcion, totalUnit: it.total, qty: 1, totalLinea: it.total })
+  }
+
   enc.init()
 
-  // ── Encabezado ──────────────────────────────────────────────────────────────
+  // ── Encabezado del negocio ────────────────────────────────────────────────────
   enc.center()
     .bold(true).doubleH(true).line(d.negocioNombre.toUpperCase()).doubleH(false).bold(false)
 
   if (d.titular && d.titular.toUpperCase() !== d.negocioNombre.toUpperCase()) {
     enc.line(d.titular.toUpperCase())
   }
-
-  enc.line(`C.U.I.T. Nro.: ${fmtCuit(d.cuit)}`)
-
-  if (d.ingBrutos)         enc.line(`Ing. Brutos: ${d.ingBrutos}`)
-  if (d.direccion)         enc.line(d.direccion.toUpperCase())
-  if (d.defensaConsumidor) enc.line(`DEFENSA DEL CONSUMIDOR ${d.defensaConsumidor}`)
-  if (d.inicioActividades) enc.line(`Inicio de Actividades: ${d.inicioActividades}`)
+  enc.line(`CUIT ${fmtCuit(d.cuit)}`)
   if (d.condicionIVA)      enc.line(`IVA ${d.condicionIVA.toUpperCase()}`)
-
+  if (d.ingBrutos)         enc.line(`IIBB: ${d.ingBrutos}`)
+  if (d.inicioActividades) enc.line(`INICIO ACTIVIDADES: ${d.inicioActividades}`)
+  if (d.direccion)         enc.line(d.direccion.toUpperCase())
   enc.lf(1)
-  enc.bold(true).line('A CONSUMIDOR FINAL').bold(false)
-  enc.line('Cod. 083 - TIQUE')
-  enc.line(`P.V.No ${pvStr} - No T. ${nStr}`)
-  enc.left().line(`Fecha: ${fechaHoraStr}`)
 
+  // ── Tipo y número de comprobante ──────────────────────────────────────────────
+  enc.left()
+  enc.bold(true).line('TIQUE (CODIGO 083)').bold(false)
+  enc.bold(true).line(`NUMERO ${pvStr}-${nStr}`).bold(false)
+  enc.line(`FECHA DE EMISION: ${fechaHoraStr}`)
+  enc.line('** ORIGINAL **')
+  enc.line('CLIENTE: CONSUMIDOR FINAL')
+  enc.line('DOM: CONSUMIDOR FINAL')
+  enc.lf(1)
+  enc.bold(true).line('A CONSUMIDOR FINAL ****').bold(false)
   enc.sep(W)
 
-  // ── Items ────────────────────────────────────────────────────────────────────
-  for (const it of d.items) {
-    enc.itemLine(it.descripcion, '  (21)  ', $(it.total), W)
+  // ── Items (dos líneas por producto: cantidad×precio / descripción+total) ───────
+  for (const g of grupos) {
+    enc.line(`${g.qty} x  ${$(g.totalUnit)}  (21)`)
+    enc.twoCol(g.descripcion.slice(0, W - 9), $(g.totalLinea), W)
   }
-
   enc.sep(W)
 
-  // ── TOTAL ────────────────────────────────────────────────────────────────────
-  enc.bold(true).twoCol('TOTAL', $(d.total), W).bold(false)
+  // ── TOTAL ─────────────────────────────────────────────────────────────────────
+  enc.bold(true).twoCol('TOTAL', `$ ${$(d.total)}`, W).bold(false)
 
-  // ── Pago ─────────────────────────────────────────────────────────────────────
+  // ── Pago ──────────────────────────────────────────────────────────────────────
   const pagoLabel: Record<string, string> = {
-    EFECTIVO: 'Efectivo', TARJETA: 'Tarjeta', BILLETERA: 'Billetera Digital',
+    EFECTIVO: 'EFECTIVO', TARJETA: 'TARJETA', BILLETERA: 'BILLETERA DIGITAL',
   }
-  enc.lf(1).twoCol(pagoLabel[d.metodoPago] ?? d.metodoPago, $(d.total), W)
+  enc.lf(1).line(`FORMA DE PAGO: ${pagoLabel[d.metodoPago] ?? d.metodoPago}`)
 
-  // ── QR ARCA + CAE (tamaño normal) ───────────────────────────────────────────
+  // ── Orientación al consumidor ─────────────────────────────────────────────────
+  if (d.defensaConsumidor) {
+    enc.line(`ORIENTACION AL CONSUMIDOR ${d.defensaConsumidor}`)
+  }
+
+  // ── Autorización ARCA + QR ────────────────────────────────────────────────────
   if (d.cae) {
-    enc.lf(1).center()
-    enc.qrCode(buildArcaQR(d), 5)
-    enc.lf(1).left()
     const vtoStr = d.caeVto ? d.caeVto.slice(0, 10).split('-').reverse().join('/') : ''
-    enc.line(`CAE: ${d.cae}`)
-    enc.twoCol(`Vto: ${vtoStr}`, 'V: 01.00', W)
-    enc.line('CF')
+    enc.lf(1).center()
+    enc.bold(true).line('* COMP.ELECT. AUTORIZADO POR ARCA *').bold(false)
+    enc.line(`C.A.E.: ${d.cae}`)
+    enc.line(`VENC. C.A.E.: ${vtoStr}`)
+    enc.line('CODIGO QR ARCA  R.G. 4892/2020')
+    enc.lf(1)
+    enc.qrCode(buildArcaQR(d), 5)
+    enc.lf(1).left().sep(W)
+    // Régimen de Transparencia Fiscal al Consumidor — Ley 27.743 / RG ARCA 5614/2024
+    enc.line('REGIMEN DE TRANSPARENCIA FISCAL')
+    enc.line('AL CONSUMIDOR LEY 27.743')
+    enc.line('RG.ARCA 5614/24')
+    enc.twoCol('IVA CONTENIDO', `$ ${$(d.iva)}`, W)
+    enc.line('SOLO SON INFORMADOS')
+    enc.line('IMPUESTOS NACIONALES')
   }
 
   enc.lf(4).cut()
@@ -219,8 +245,8 @@ export interface DatosTicketNoFiscal {
 
 export function buildTicketNoFiscalBytes(d: DatosTicketNoFiscal): Uint8Array {
   const enc = new EscPos()
-  const W   = 32
-  const $   = (n: number) => n.toFixed(2)
+  const W   = 42
+  const $   = (n: number) => n.toFixed(2).replace('.', ',')
 
   let fechaHoraStr: string
   if (d.fechaHora) {
@@ -302,8 +328,8 @@ export interface DatosCierre {
 
 export function buildCierreBytes(d: DatosCierre): Uint8Array {
   const enc = new EscPos()
-  const W   = 32
-  const $   = (n: number) => `$ ${n.toFixed(2)}`
+  const W   = 42
+  const $   = (n: number) => `$ ${n.toFixed(2).replace('.', ',')}`
 
   enc.init()
   enc.center()
