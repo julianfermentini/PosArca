@@ -48,5 +48,18 @@ func migrar(db *gorm.DB) error {
 	// Eliminar restricción NOT NULL de cuit si existe (puede fallar silenciosamente)
 	db.Exec(`ALTER TABLE config_empresa ALTER COLUMN cuit DROP NOT NULL`)
 
+	// AutoMigrate no siempre agrega constraints nuevos a una tabla que ya existe.
+	// Estos dos índices son imprescindibles: el primero para el ON CONFLICT del
+	// caché de token ARCA, el segundo para que el contador de numeración de
+	// comprobantes sea realmente único por (tipo, punto_venta) y no puedan crearse
+	// dos filas para la misma clave bajo concurrencia. Si fallan (ej. ya hay filas
+	// duplicadas) no aborta el arranque, pero queda logueado en vez de en silencio.
+	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_arca_token_cache_cuit ON arca_token_cache (cuit)`).Error; err != nil {
+		slog.Error("no se pudo crear índice único de arca_token_cache", "err", err)
+	}
+	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_comprobante_contadores_tipo_pv ON comprobante_contadores (tipo, punto_venta)`).Error; err != nil {
+		slog.Error("no se pudo crear índice único de comprobante_contadores", "err", err)
+	}
+
 	return nil
 }

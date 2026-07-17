@@ -56,7 +56,11 @@ func Load() *Config {
 		NegocioDirec:   getEnv("NEGOCIO_DIRECCION", ""),
 		NegocioTel:     getEnv("NEGOCIO_TEL", ""),
 		NegocioIVACond: getEnv("NEGOCIO_IVA_COND", "Responsable Inscripto"),
-		PrinterPort:    getEnv("PRINTER_PORT", "/dev/ttyUSB0"),
+		// Sin default: un puerto serie que no existe (ej. en un contenedor en la nube
+		// sin impresora física) hace que EstaConfigurada() crea que sí hay impresora
+		// y reintente imprimir en cada venta sin sentido. Vacío = sin impresora serie
+		// (el despliegue Linux/Raspberry Pi lo setea explícito a /dev/ttyUSB0).
+		PrinterPort:    getEnv("PRINTER_PORT", ""),
 		PrinterBaud:    printerBaud,
 		Port:           getEnv("PORT", "8080"),
 		JWTSecret:      mustGetEnvFailFast("JWT_SECRET"),
