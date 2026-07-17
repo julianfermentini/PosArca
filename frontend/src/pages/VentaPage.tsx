@@ -65,6 +65,13 @@ export default function VentaPage() {
     setErrorMsg('')
 
     try {
+      // Si hay ventas offline sin sincronizar, sincronizarlas antes de emitir esta
+      // — si no, esta venta consigue número antes que una anterior que todavía no
+      // lo tiene, y se rompe el orden correlativo del comprobante.
+      if (sync.online && sync.pendientes > 0) {
+        await sync.sincronizar()
+      }
+
       if (needsFactura) {
         if (!razonSocial.trim())    { setErrorMsg('Ingresá la razón social'); return }
         if (!validarCUIT(cuit))     { setErrorMsg('CUIT inválido'); return }
