@@ -17,9 +17,12 @@ func getEmpresaConf(db *gorm.DB, cfg *config.Config) models.ConfigEmpresa {
 		emp.Direccion = cfg.NegocioDirec
 		emp.Telefono = cfg.NegocioTel
 		emp.CondicionIVA = cfg.NegocioIVACond
-		emp.CUIT = cfg.ArcaCUIT
 		emp.PuntoVenta = cfg.ArcaPuntoVenta
 		emp.ArcaEnv = cfg.ArcaEnv
+	}
+	// CUIT siempre desde env var — es un dato fiscal que debe coincidir con el certificado ARCA
+	if cfg.ArcaCUIT != "" {
+		emp.CUIT = cfg.ArcaCUIT
 	}
 	return emp
 }
