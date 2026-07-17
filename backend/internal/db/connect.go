@@ -31,18 +31,6 @@ func Connect(cfg *config.Config) (*gorm.DB, error) {
 }
 
 func migrar(db *gorm.DB) error {
-	// Si ventas tiene la columna 'items' es el schema viejo (JSONB) — lo descartamos.
-	var itemsCol int64
-	db.Raw(`SELECT COUNT(*) FROM information_schema.columns
-		WHERE table_name = 'ventas' AND column_name = 'items'`).Scan(&itemsCol)
-
-	if itemsCol > 0 {
-		slog.Info("schema anterior detectado (items JSONB), recreando tablas normalizadas...")
-		db.Exec(`DROP TABLE IF EXISTS facturas CASCADE`)
-		db.Exec(`DROP TABLE IF EXISTS ventas CASCADE`)
-		db.Exec(`DROP TABLE IF EXISTS config_empresa CASCADE`)
-	}
-
 	if err := db.AutoMigrate(
 		&models.User{},
 		&models.Venta{},
@@ -50,6 +38,7 @@ func migrar(db *gorm.DB) error {
 		&models.Factura{},
 		&models.ConfigEmpresa{},
 		&models.Producto{},
+		&models.ComprobanteContador{},
 	); err != nil {
 		return err
 	}

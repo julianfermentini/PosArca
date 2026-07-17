@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"pos-fiscal/config"
 	"pos-fiscal/internal/arca"
@@ -160,13 +162,50 @@ func (h *VentasHandler) Listar(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": ventas})
 }
 
-// siguienteNumero genera el próximo número secuencial (dentro de una transacción).
+// siguienteNumero genera el próximo número secuencial de forma atómica.
+// Usa un lock de fila (SELECT ... FOR UPDATE) sobre el contador de (tipo, punto_venta)
+// para que transacciones concurrentes (p. ej. varias ventas de /sync/ventas en paralelo)
+// no puedan calcular el mismo número — a diferencia de un COUNT(*), que no serializa nada.
 func siguienteNumero(tx *gorm.DB, tipo models.TipoComprobante, puntoVenta int) (string, error) {
-	var count int64
-	if err := tx.Model(&models.Venta{}).Where("tipo = ?", tipo).Count(&count).Error; err != nil {
+	contador, err := contadorConLock(tx, tipo, puntoVenta)
+	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("%03d-%08d", puntoVenta, count+1), nil
+
+	contador.Ultimo++
+	if err := tx.Save(contador).Error; err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("%03d-%08d", puntoVenta, contador.Ultimo), nil
+}
+
+// contadorConLock trae (bajo SELECT ... FOR UPDATE) la fila que lleva la cuenta de
+// números emitidos para (tipo, punto_venta), creándola si es la primera vez.
+// Al crearla, arranca desde el conteo actual de ventas para no chocar con
+// numeración ya emitida bajo el esquema anterior (COUNT(*) sin contador propio).
+func contadorConLock(tx *gorm.DB, tipo models.TipoComprobante, puntoVenta int) (*models.ComprobanteContador, error) {
+	var contador models.ComprobanteContador
+	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("tipo = ? AND punto_venta = ?", tipo, puntoVenta).
+		First(&contador).Error
+
+	if err == nil {
+		return &contador, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+
+	var existentes int64
+	if err := tx.Model(&models.Venta{}).Where("tipo = ?", tipo).Count(&existentes).Error; err != nil {
+		return nil, err
+	}
+	contador = models.ComprobanteContador{Tipo: tipo, PuntoVenta: puntoVenta, Ultimo: existentes}
+	if err := tx.Create(&contador).Error; err != nil {
+		return nil, err
+	}
+	return &contador, nil
 }
 
 func (h *VentasHandler) solicitarCAE(
