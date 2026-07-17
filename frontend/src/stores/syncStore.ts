@@ -44,9 +44,12 @@ export const useSyncStore = create<SyncState>((set, get) => ({
 
       const { data } = await syncApi.sincronizar(pendientes)
       if (data.success && data.data) {
-        // En una implementación completa, marcar individualmente según resultados
-        for (const venta of pendientes) {
-          await marcarSincronizada(venta.id)
+        const exitosas = data.data.resultados.filter((r) => r.success)
+        await Promise.all(exitosas.map((r) => marcarSincronizada(r.id)))
+        const fallidas = data.data.resultados.filter((r) => !r.success)
+        if (fallidas.length > 0) {
+          // Quedan en PENDIENTE a propósito — se reintentan en el próximo sync.
+          console.error('Ventas no sincronizadas, se reintentarán:', fallidas)
         }
         await get().actualizarConteo()
       }

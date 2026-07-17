@@ -65,9 +65,17 @@ export const reportesApi = {
     api.get<ApiResponse<ResumenCierre>>('/reportes/cierre', { params: fecha ? { fecha } : {} }),
 }
 
+export interface SyncResultadoItem {
+  id: string
+  numero?: string
+  cae?: string
+  error?: string
+  success: boolean
+}
+
 export const syncApi = {
   sincronizar: (ventas: VentaOffline[]) =>
-    api.post<ApiResponse<{ total: number; exitosos: number }>>('/sync/ventas', { ventas }),
+    api.post<ApiResponse<{ total: number; exitosos: number; resultados: SyncResultadoItem[] }>>('/sync/ventas', { ventas }),
 }
 
 export interface Empresa {
