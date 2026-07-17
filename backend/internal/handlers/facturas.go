@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 
@@ -9,22 +10,17 @@ import (
 	"gorm.io/gorm"
 
 	"pos-fiscal/config"
-	"pos-fiscal/internal/arca"
-	"pos-fiscal/internal/email"
-	"pos-fiscal/internal/impresora"
 	"pos-fiscal/internal/models"
 )
 
 type FacturasHandler struct {
-	db       *gorm.DB
-	cfg      *config.Config
-	imp      *impresora.Impresora
-	emailCli *email.Cliente
-	worker   *Worker
+	db     *gorm.DB
+	cfg    *config.Config
+	worker *Worker
 }
 
-func NuevoFacturasHandler(db *gorm.DB, cfg *config.Config, imp *impresora.Impresora, emailCli *email.Cliente, worker *Worker) *FacturasHandler {
-	return &FacturasHandler{db: db, cfg: cfg, imp: imp, emailCli: emailCli, worker: worker}
+func NuevoFacturasHandler(db *gorm.DB, cfg *config.Config, worker *Worker) *FacturasHandler {
+	return &FacturasHandler{db: db, cfg: cfg, worker: worker}
 }
 
 type CrearFacturaRequest struct {
@@ -44,9 +40,8 @@ func (h *FacturasHandler) Crear(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	vh := &VentasHandler{db: h.db, cfg: h.cfg, impresora: h.imp}
 
-	var ventaID uuid.UUID
+	var ventaID, facturaID uuid.UUID
 	var numero string
 
 	err := h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -57,13 +52,12 @@ func (h *FacturasHandler) Crear(c *gin.Context) {
 		}
 
 		ventaID = uuid.New()
-		venta := models.Venta{
+		if err := tx.Create(&models.Venta{
 			ID:         ventaID,
 			Tipo:       models.TipoFactura,
 			Numero:     numero,
 			MetodoPago: req.MetodoPago,
-		}
-		if err := tx.Create(&venta).Error; err != nil {
+		}).Error; err != nil {
 			return err
 		}
 
@@ -73,10 +67,26 @@ func (h *FacturasHandler) Crear(c *gin.Context) {
 				return err
 			}
 		}
-		return nil
+
+		// La factura se crea PENDIENTE con los datos del cliente ya guardados, para
+		// no perderlos si ARCA está caído; el CAE se completa cuando se autoriza.
+		facturaID = uuid.New()
+		if err := tx.Create(&models.Factura{
+			ID:           facturaID,
+			VentaID:      ventaID,
+			RazonSocial:  req.RazonSocial,
+			CUITCliente:  req.CUITCliente,
+			EmailCliente: req.EmailCliente,
+			Estado:       models.EstadoPendiente,
+		}).Error; err != nil {
+			return err
+		}
+
+		return encolarTarea(tx, ventaID, models.TareaObtenerCAE)
 	})
 
 	if err != nil {
+		slog.Error("crear factura", "err", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
 		return
 	}
@@ -85,57 +95,24 @@ func (h *FacturasHandler) Crear(c *gin.Context) {
 	h.db.Preload("Items", func(db *gorm.DB) *gorm.DB {
 		return db.Order("orden ASC")
 	}).First(&venta, "id = ?", ventaID)
+	_, _, total := models.TotalesDeItems(venta.Items)
 
-	_, iva, total := models.TotalesDeItems(venta.Items)
+	// Intento inmediato del CAE (mismo criterio que el ticket): si ARCA está caído,
+	// la factura queda registrada y pendiente, y el worker reintenta hasta autorizar
+	// y mandar el email; el frontend imprime un comprobante no fiscal mientras tanto.
+	cae, caeErr := h.worker.obtenerCAE(ctx, ventaID)
+	go h.worker.procesarPendientes(context.Background())
 
-	docNro := parseCUIT(req.CUITCliente)
-	docTipo := arca.TipoDocConsumidorFinal
-	if docNro > 0 {
-		docTipo = arca.TipoDocCUIT
+	data := gin.H{"id": facturaID, "venta_id": ventaID, "numero": numero, "total": total, "email_enviado": false}
+	if caeErr != nil || cae == nil {
+		slog.Warn("factura sin CAE — ARCA no disponible, pendiente de reintento", "venta_id", ventaID, "err", caeErr)
+		data["pendiente_cae"] = true
+	} else {
+		data["pendiente_cae"] = false
+		data["cae"] = cae.CAE
+		data["cae_vto"] = cae.FchVto.Format("2006-01-02")
 	}
-
-	caeResult, err := vh.solicitarCAE(ctx, ventaID, iva, total, venta.Items, docNro, docTipo)
-	if err != nil {
-		slog.Error("CAE factura", "err", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "error CAE: " + err.Error()})
-		return
-	}
-
-	factura := models.Factura{
-		ID:           uuid.New(),
-		VentaID:      ventaID,
-		RazonSocial:  req.RazonSocial,
-		CUITCliente:  req.CUITCliente,
-		EmailCliente: req.EmailCliente,
-		CAE:          caeResult.CAE,
-		Estado:       models.EstadoAutorizado,
-	}
-	fchVto := caeResult.FchVto
-	factura.CAEVto = &fchVto
-
-	if err := h.db.Create(&factura).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "error guardando factura"})
-		return
-	}
-
-	// Persistir CAE/QR en la venta y encolar impresión + email como tareas, en vez
-	// de dispararlas en una goroutine suelta que se pierde si el proceso se reinicia.
-	if err := h.worker.PersistirCAEYEncolar(ventaID, caeResult, models.TareaImprimir, models.TareaEmailFactura); err != nil {
-		slog.Error("factura creada pero no se pudieron encolar sus tareas", "err", err, "venta_id", ventaID)
-	}
-
-	c.JSON(http.StatusCreated, gin.H{
-		"success": true,
-		"data": gin.H{
-			"id":            factura.ID,
-			"venta_id":      ventaID,
-			"numero":        numero,
-			"cae":           caeResult.CAE,
-			"cae_vto":       caeResult.FchVto.Format("2006-01-02"),
-			"total":         total,
-			"email_enviado": false,
-		},
-	})
+	c.JSON(http.StatusCreated, gin.H{"success": true, "data": data})
 }
 
 // Listar maneja GET /api/facturas

@@ -13,7 +13,6 @@ import (
 	"gorm.io/gorm"
 
 	"pos-fiscal/config"
-	"pos-fiscal/internal/arca"
 	"pos-fiscal/internal/models"
 )
 
@@ -95,9 +94,7 @@ func (h *SyncHandler) procesarOffline(ctx context.Context, v VentaOffline) SyncR
 	// en un intento anterior, después de crearla), hay que reintentar el CAE — no
 	// alcanza con que la fila exista para considerarla sincronizada.
 	var existente models.Venta
-	yaExiste := h.db.Preload("Items", func(d *gorm.DB) *gorm.DB {
-		return d.Order("orden ASC")
-	}).Where("id = ?", ventaID).First(&existente).Error == nil
+	yaExiste := h.db.Where("id = ?", ventaID).First(&existente).Error == nil
 
 	if yaExiste {
 		if existente.CAE != "" {
@@ -139,30 +136,18 @@ func (h *SyncHandler) procesarOffline(ctx context.Context, v VentaOffline) SyncR
 		return SyncResultado{ID: v.ID, Error: err.Error(), Success: false}
 	}
 
-	var venta models.Venta
-	h.db.Preload("Items", func(d *gorm.DB) *gorm.DB {
-		return d.Order("orden ASC")
-	}).First(&venta, "id = ?", ventaID)
-
-	return h.solicitarCAEYResultado(ctx, venta)
+	return h.solicitarCAEYResultado(ctx, models.Venta{ID: ventaID, Numero: numero})
 }
 
-// solicitarCAEYResultado pide el CAE para una venta ya persistida — recién creada
-// o de un reintento — y, si lo consigue, lo persiste junto con la tarea de
-// impresión. No pide número nuevo ni recrea nada: eso ya pasó antes de llamarla.
+// solicitarCAEYResultado consigue el CAE de una venta ya persistida (recién creada
+// o de un reintento) vía el worker, que además persiste CAE/QR y encola la impresión.
 func (h *SyncHandler) solicitarCAEYResultado(ctx context.Context, venta models.Venta) SyncResultado {
-	_, iva, total := models.TotalesDeItems(venta.Items)
-
-	vh := &VentasHandler{db: h.db, cfg: h.cfg}
-	caeResult, err := vh.solicitarCAE(ctx, venta.ID, iva, total, venta.Items, 0, arca.TipoDocConsumidorFinal)
+	cae, err := h.worker.obtenerCAE(ctx, venta.ID)
 	if err != nil {
 		slog.Error("CAE sync", "id", venta.ID, "err", err)
 		return SyncResultado{ID: venta.ID.String(), Numero: venta.Numero, Error: "CAE: " + err.Error(), Success: false}
 	}
 
-	if err := h.worker.PersistirCAEYEncolar(venta.ID, caeResult, models.TareaImprimir); err != nil {
-		slog.Error("sync: no se pudo encolar impresión", "id", venta.ID, "err", err)
-	}
-
-	return SyncResultado{ID: venta.ID.String(), Numero: venta.Numero, CAE: caeResult.CAE, Success: true}
+	go h.worker.procesarPendientes(context.Background())
+	return SyncResultado{ID: venta.ID.String(), Numero: venta.Numero, CAE: cae.CAE, Success: true}
 }

@@ -55,7 +55,7 @@ func main() {
 	worker := handlers.NuevoWorker(database, cfg, imp, emailCli)
 	go worker.Iniciar(workerCtx, 5*time.Second)
 
-	router := api.SetupRouter(database, cfg, imp, emailCli, worker)
+	router := api.SetupRouter(database, cfg, worker)
 
 	srv := &http.Server{
 		Addr:    ":" + cfg.Port,

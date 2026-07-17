@@ -77,15 +77,50 @@ export default function VentaPage() {
         if (!validarCUIT(cuit))     { setErrorMsg('CUIT inválido'); return }
         if (!emailCliente.includes('@')) { setErrorMsg('Email inválido'); return }
 
+        // Snapshot antes de que mostrarExito limpie el carrito, por si hay que
+        // imprimir un comprobante no fiscal (ARCA caído).
+        const itemsSnap    = store.getItemsParaAPI()
+        const subtotalSnap = store.getSubtotal()
+        const ivaSnap      = store.getIVA()
+        const totalSnap    = store.getTotal()
+        const metodoSnap   = store.metodoPago!
+
         const { data } = await facturasApi.crear({
-          items: store.getItemsParaAPI(),
-          metodo_pago: store.metodoPago!,
+          items: itemsSnap,
+          metodo_pago: metodoSnap,
           razon_social: razonSocial.trim(),
           cuit_cliente: cuit,
           email_cliente: emailCliente,
         })
         if (!data.success) throw new Error(data.error || 'Error al emitir factura')
-        mostrarExito('Factura', data.data!.numero)
+
+        if (data.data!.pendiente_cae) {
+          // ARCA no disponible: la factura quedó registrada y se autoriza sola; el
+          // PDF llega por email cuando se autorice. Mientras, comprobante no fiscal.
+          mostrarExito('Factura', 'PENDIENTE')
+          if (printer.conectado) {
+            printer.imprimirNoFiscal({
+              negocioNombre:     empresa?.razon_social ?? '',
+              titular:           empresa?.titular ?? '',
+              cuit:              empresa?.cuit ?? '',
+              ingBrutos:         empresa?.ing_brutos ?? '',
+              direccion:         empresa?.direccion ?? '',
+              defensaConsumidor: empresa?.defensa_consumidor ?? '',
+              condicionIVA:      empresa?.condicion_iva ?? '',
+              items: itemsSnap.map(it => ({
+                descripcion: it.descripcion,
+                precioNeto:  it.precio_neto,
+                total:       calcularTotal(it.precio_neto),
+              })),
+              subtotal:   subtotalSnap,
+              iva:        ivaSnap,
+              total:      totalSnap,
+              metodoPago: metodoSnap,
+            })
+          }
+        } else {
+          mostrarExito('Factura', data.data!.numero)
+        }
       } else {
         if (!sync.online) {
           // Capturar antes de limpiar el carrito
@@ -143,34 +178,60 @@ export default function VentaPage() {
           metodo_pago: metodoPago,
         })
         if (data.success && data.data) {
-          mostrarExito('Ticket', data.data.numero)
+          if (data.data.pendiente_cae) {
+            // ARCA no disponible: la venta quedó registrada y consigue el CAE sola
+            // más tarde. Al cliente se le da un ticket NO fiscal como comprobante.
+            mostrarExito('Ticket', 'PENDIENTE')
+            if (printer.conectado) {
+              printer.imprimirNoFiscal({
+                negocioNombre:     empresa?.razon_social ?? '',
+                titular:           empresa?.titular ?? '',
+                cuit:              empresa?.cuit ?? '',
+                ingBrutos:         empresa?.ing_brutos ?? '',
+                direccion:         empresa?.direccion ?? '',
+                defensaConsumidor: empresa?.defensa_consumidor ?? '',
+                condicionIVA:      empresa?.condicion_iva ?? '',
+                items: itemsSnap.map(it => ({
+                  descripcion: it.descripcion,
+                  precioNeto:  it.precio_neto,
+                  total:       calcularTotal(it.precio_neto),
+                })),
+                subtotal:   subtotalSnap,
+                iva:        ivaSnap,
+                total:      totalSnap,
+                metodoPago: metodoPago,
+              })
+            }
+          } else {
+            mostrarExito('Ticket', data.data.numero)
 
-          // Imprimir desde el tablet si hay impresora conectada
-          if (printer.conectado) {
-            printer.imprimir({
-              negocioNombre:      empresa?.razon_social ?? '',
-              titular:            empresa?.titular ?? '',
-              cuit:               empresa?.cuit ?? '',
-              ingBrutos:          empresa?.ing_brutos ?? '',
-              direccion:          empresa?.direccion ?? '',
-              inicioActividades:  empresa?.inicio_actividades ?? '',
-              defensaConsumidor:  empresa?.defensa_consumidor ?? '',
-              condicionIVA:       empresa?.condicion_iva ?? '',
-              puntoVenta:         empresa?.punto_venta ?? 1,
-              tipoCmp:            'TICKET',
-              numero:             data.data.numero,
-              items:              itemsSnap.map(it => ({
-                descripcion: it.descripcion,
-                precioNeto:  it.precio_neto,
-                total:       calcularTotal(it.precio_neto),
-              })),
-              subtotal:   subtotalSnap,
-              iva:        ivaSnap,
-              total:      totalSnap,
-              metodoPago: metodoPago,
-              cae:        data.data.cae,
-              caeVto:     data.data.cae_vto ?? '',
-            })
+            // Imprimir el ticket fiscal desde el tablet si hay impresora conectada
+            if (printer.conectado) {
+              printer.imprimir({
+                negocioNombre:      empresa?.razon_social ?? '',
+                titular:            empresa?.titular ?? '',
+                cuit:               empresa?.cuit ?? '',
+                ingBrutos:          empresa?.ing_brutos ?? '',
+                direccion:          empresa?.direccion ?? '',
+                inicioActividades:  empresa?.inicio_actividades ?? '',
+                defensaConsumidor:  empresa?.defensa_consumidor ?? '',
+                condicionIVA:       empresa?.condicion_iva ?? '',
+                puntoVenta:         empresa?.punto_venta ?? 1,
+                tipoCmp:            'TICKET',
+                numero:             data.data.numero,
+                items:              itemsSnap.map(it => ({
+                  descripcion: it.descripcion,
+                  precioNeto:  it.precio_neto,
+                  total:       calcularTotal(it.precio_neto),
+                })),
+                subtotal:   subtotalSnap,
+                iva:        ivaSnap,
+                total:      totalSnap,
+                metodoPago: metodoPago,
+                cae:        data.data.cae ?? '',
+                caeVto:     data.data.cae_vto ?? '',
+              })
+            }
           }
         }
       }
@@ -511,12 +572,14 @@ export default function VentaPage() {
               animation: 'fadeSlideIn 0.25s ease',
             }}>
               <span className="font-bold" style={{ color: '#16A34A' }}>{emitido.tipo} emitido</span>
-              {emitido.numero !== 'OFFLINE' ? (
+              {emitido.numero === 'OFFLINE' ? (
+                <span style={{ fontSize: 12, color: '#D97706' }}>Guardado offline — se sincronizará</span>
+              ) : emitido.numero === 'PENDIENTE' ? (
+                <span style={{ fontSize: 12, color: '#D97706' }}>Cobrado — pendiente de CAE, se autoriza solo</span>
+              ) : (
                 <span className="font-mono text-gray-400" style={{ fontSize: 11 }}>
                   N° {emitido.numero} · CAE aprobado
                 </span>
-              ) : (
-                <span style={{ fontSize: 12, color: '#D97706' }}>Guardado offline — se sincronizará</span>
               )}
             </div>
           )}

@@ -10,6 +10,7 @@ type TipoTarea string
 type EstadoTarea string
 
 const (
+	TareaObtenerCAE   TipoTarea = "OBTENER_CAE"
 	TareaImprimir     TipoTarea = "IMPRIMIR"
 	TareaEmailFactura TipoTarea = "EMAIL_FACTURA"
 

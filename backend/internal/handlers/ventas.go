@@ -14,20 +14,17 @@ import (
 	"gorm.io/gorm/clause"
 
 	"pos-fiscal/config"
-	"pos-fiscal/internal/arca"
-	"pos-fiscal/internal/impresora"
 	"pos-fiscal/internal/models"
 )
 
 type VentasHandler struct {
-	db        *gorm.DB
-	cfg       *config.Config
-	impresora *impresora.Impresora
-	worker    *Worker
+	db     *gorm.DB
+	cfg    *config.Config
+	worker *Worker
 }
 
-func NuevoVentasHandler(db *gorm.DB, cfg *config.Config, imp *impresora.Impresora, worker *Worker) *VentasHandler {
-	return &VentasHandler{db: db, cfg: cfg, impresora: imp, worker: worker}
+func NuevoVentasHandler(db *gorm.DB, cfg *config.Config, worker *Worker) *VentasHandler {
+	return &VentasHandler{db: db, cfg: cfg, worker: worker}
 }
 
 type CrearVentaRequest struct {
@@ -76,7 +73,9 @@ func (h *VentasHandler) Crear(c *gin.Context) {
 			}
 		}
 
-		return nil
+		// La tarea de CAE se encola en la misma transacción: si el proceso se cae
+		// justo después, la venta nunca queda sin nadie que le consiga el CAE.
+		return encolarTarea(tx, ventaID, models.TareaObtenerCAE)
 	})
 
 	if err != nil {
@@ -85,37 +84,28 @@ func (h *VentasHandler) Crear(c *gin.Context) {
 		return
 	}
 
-	// Cargar venta con ítems para el ticket
 	var venta models.Venta
 	h.db.Preload("Items", func(db *gorm.DB) *gorm.DB {
 		return db.Order("orden ASC")
 	}).First(&venta, "id = ?", ventaID)
+	_, _, total := models.TotalesDeItems(venta.Items)
 
-	_, iva, total := models.TotalesDeItems(venta.Items)
+	// Intento inmediato: si ARCA responde (caso normal), el ticket sale fiscal al
+	// toque; si está caído, la venta queda registrada y el worker reintenta —
+	// el frontend imprime un ticket no fiscal mientras tanto.
+	cae, caeErr := h.worker.obtenerCAE(ctx, ventaID)
+	go h.worker.procesarPendientes(context.Background())
 
-	caeResult, err := h.solicitarCAE(ctx, ventaID, iva, total, venta.Items, 0, arca.TipoDocConsumidorFinal)
-	if err != nil {
-		slog.Error("solicitar CAE ARCA", "err", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "error obteniendo CAE: " + err.Error()})
-		return
+	data := gin.H{"id": ventaID, "numero": numero, "total": total}
+	if caeErr != nil || cae == nil {
+		slog.Warn("venta sin CAE — ARCA no disponible, pendiente de reintento", "venta_id", ventaID, "err", caeErr)
+		data["pendiente_cae"] = true
+	} else {
+		data["pendiente_cae"] = false
+		data["cae"] = cae.CAE
+		data["cae_vto"] = cae.FchVto.Format("2006-01-02")
 	}
-
-	// Persistir CAE/QR y encolar la impresión como tarea, en vez de dispararla
-	// en una goroutine suelta que se pierde si el proceso se reinicia.
-	if err := h.worker.PersistirCAEYEncolar(ventaID, caeResult, models.TareaImprimir); err != nil {
-		slog.Error("venta creada pero no se pudo encolar la impresión", "err", err, "venta_id", ventaID)
-	}
-
-	c.JSON(http.StatusCreated, gin.H{
-		"success": true,
-		"data": gin.H{
-			"id":      ventaID,
-			"numero":  numero,
-			"cae":     caeResult.CAE,
-			"cae_vto": caeResult.FchVto.Format("2006-01-02"),
-			"total":   total,
-		},
-	})
+	c.JSON(http.StatusCreated, gin.H{"success": true, "data": data})
 }
 
 // DiasConVentas maneja GET /api/ventas/dias?mes=YYYY-MM
@@ -210,45 +200,6 @@ func contadorConLock(tx *gorm.DB, tipo models.TipoComprobante, puntoVenta int) (
 		return nil, err
 	}
 	return &contador, nil
-}
-
-func (h *VentasHandler) solicitarCAE(
-	ctx context.Context,
-	ventaID uuid.UUID,
-	iva, total float64,
-	items []models.VentaItem,
-	docNro int64,
-	docTipo int,
-) (*arca.ResultadoCAE, error) {
-	cuitInt := parseCUIT(h.cfg.ArcaCUIT)
-	token, sign, err := arca.GetToken(ctx, h.db, cuitInt, h.cfg.ArcaCertPath, h.cfg.ArcaKeyPath, h.cfg.ArcaEnv)
-	if err != nil {
-		return nil, err
-	}
-
-	tipoCmp := arca.TipoFacturaB
-	condIVA := 5 // Consumidor Final
-	if docTipo == arca.TipoDocCUIT {
-		tipoCmp = arca.TipoFacturaA
-		condIVA = 1 // IVA Responsable Inscripto
-	}
-
-	subtotal := total - iva
-
-	params := arca.SolicitarCAEParams{
-		CUIT:                   cuitInt,
-		PuntoVenta:             h.cfg.ArcaPuntoVenta,
-		TipoCmp:                tipoCmp,
-		Fecha:                  time.Now(),
-		Subtotal:               subtotal,
-		IVA:                    iva,
-		Total:                  total,
-		DocTipoRec:             docTipo,
-		DocNroRec:              docNro,
-		CondicionIVAReceptorId: condIVA,
-	}
-
-	return arca.SolicitarCAE(ctx, params, token, sign, h.cfg.ArcaEnv)
 }
 
 func parseCUIT(cuit string) int64 {

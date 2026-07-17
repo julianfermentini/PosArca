@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -17,9 +18,13 @@ import (
 	"pos-fiscal/internal/pdf"
 )
 
-const maxIntentosTarea = 5
+const (
+	maxIntentosTarea = 5                // imprimir/email: tras 5 fallos se deja la tarea en ERROR
+	maxIntentosCAE   = 288              // obtener CAE: ~24h reintentando cada ~5min si ARCA está caído
+	timeoutCAE       = 12 * time.Second // techo por intento de CAE: acota cuánto se retiene caeMu si ARCA cuelga
+)
 
-// encolarTarea registra un efecto secundario pendiente (imprimir, enviar email).
+// encolarTarea registra un efecto secundario pendiente (obtener CAE, imprimir, email).
 // Se llama dentro de la misma transacción que crea la venta/factura, para que
 // nunca pueda existir una sin su tarea asociada.
 func encolarTarea(tx *gorm.DB, ventaID uuid.UUID, tipo models.TipoTarea) error {
@@ -30,12 +35,90 @@ func encolarTarea(tx *gorm.DB, ventaID uuid.UUID, tipo models.TipoTarea) error {
 	}).Error
 }
 
-// PersistirCAEYEncolar guarda el CAE/QR obtenidos de ARCA en la venta y encola las
-// tareas indicadas en una única transacción, para que nunca quede un CAE persistido
-// sin la tarea que lo va a imprimir/emailear. Si se encola con éxito, empuja al
-// worker para procesar ya — el poll periódico queda solo como red de seguridad.
-func (w *Worker) PersistirCAEYEncolar(ventaID uuid.UUID, cae *arca.ResultadoCAE, tareas ...models.TipoTarea) error {
-	err := w.db.Transaction(func(tx *gorm.DB) error {
+// solicitarCAE pide un CAE a ARCA para los montos y receptor dados. No toca la base:
+// solo habla con AFIP/ARCA. Es el único lugar que arma los parámetros del pedido.
+func solicitarCAE(ctx context.Context, db *gorm.DB, cfg *config.Config, iva, total float64, docNro int64, docTipo int) (*arca.ResultadoCAE, error) {
+	cuitInt := parseCUIT(cfg.ArcaCUIT)
+	token, sign, err := arca.GetToken(ctx, db, cuitInt, cfg.ArcaCertPath, cfg.ArcaKeyPath, cfg.ArcaEnv)
+	if err != nil {
+		return nil, err
+	}
+
+	tipoCmp := arca.TipoFacturaB
+	condIVA := 5 // Consumidor Final
+	if docTipo == arca.TipoDocCUIT {
+		tipoCmp = arca.TipoFacturaA
+		condIVA = 1 // IVA Responsable Inscripto
+	}
+
+	return arca.SolicitarCAE(ctx, arca.SolicitarCAEParams{
+		CUIT:                   cuitInt,
+		PuntoVenta:             cfg.ArcaPuntoVenta,
+		TipoCmp:                tipoCmp,
+		Fecha:                  time.Now(),
+		Subtotal:               total - iva,
+		IVA:                    iva,
+		Total:                  total,
+		DocTipoRec:             docTipo,
+		DocNroRec:              docNro,
+		CondicionIVAReceptorId: condIVA,
+	}, token, sign, cfg.ArcaEnv)
+}
+
+// obtenerCAE consigue el CAE de una venta ya persistida y, si lo logra, guarda
+// CAE/QR, autoriza la factura (si la venta es una factura) y encola la impresión
+// (+ email para facturas). Es idempotente: si la venta ya tiene CAE, no re-solicita
+// ni re-encola. Devuelve el CAE para que el handler pueda responder al toque.
+//
+// La usan tanto el intento sincrónico al crear la venta como el worker al reintentar:
+// si ARCA está caído en el primer intento, la venta queda registrada y el worker la
+// vuelve a intentar hasta conseguirlo, sin perder nada.
+func (w *Worker) obtenerCAE(ctx context.Context, ventaID uuid.UUID) (*arca.ResultadoCAE, error) {
+	// caeMu serializa TODAS las solicitudes de CAE: dos pedidos concurrentes para la
+	// misma venta darían dos CAE (doble numeración fiscal), y para ventas distintas
+	// podrían pedir el mismo número de AFIP (FECompUltimoAutorizado+1 leído a la vez).
+	// Las ventas de un POS son secuenciales, así que la contención es rara.
+	w.caeMu.Lock()
+	defer w.caeMu.Unlock()
+
+	var venta models.Venta
+	if err := w.db.Preload("Items", func(d *gorm.DB) *gorm.DB {
+		return d.Order("orden ASC")
+	}).First(&venta, "id = ?", ventaID).Error; err != nil {
+		return nil, fmt.Errorf("cargar venta: %w", err)
+	}
+
+	if venta.CAE != "" {
+		var vto time.Time
+		if venta.CAEVto != nil {
+			vto = *venta.CAEVto
+		}
+		return &arca.ResultadoCAE{CAE: venta.CAE, FchVto: vto, QRData: venta.QRData}, nil
+	}
+
+	docNro, docTipo := int64(0), arca.TipoDocConsumidorFinal
+	esFactura := venta.Tipo == models.TipoFactura
+	if esFactura {
+		var factura models.Factura
+		if err := w.db.First(&factura, "venta_id = ?", ventaID).Error; err != nil {
+			return nil, fmt.Errorf("cargar factura: %w", err)
+		}
+		if docNro = parseCUIT(factura.CUITCliente); docNro > 0 {
+			docTipo = arca.TipoDocCUIT
+		}
+	}
+
+	_, iva, total := models.TotalesDeItems(venta.Items)
+	arcaCtx, cancel := context.WithTimeout(ctx, timeoutCAE)
+	cae, err := solicitarCAE(arcaCtx, w.db, w.cfg, iva, total, docNro, docTipo)
+	cancel()
+	if err != nil {
+		return nil, err
+	}
+
+	// Persistir CAE/QR y encolar downstream en una sola transacción, para que nunca
+	// quede un CAE sin las tareas que lo imprimen/emailean.
+	err = w.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&models.Venta{}).Where("id = ?", ventaID).Updates(map[string]interface{}{
 			"cae":     cae.CAE,
 			"cae_vto": &cae.FchVto,
@@ -43,18 +126,29 @@ func (w *Worker) PersistirCAEYEncolar(ventaID uuid.UUID, cae *arca.ResultadoCAE,
 		}).Error; err != nil {
 			return err
 		}
-		for _, tipo := range tareas {
-			if err := encolarTarea(tx, ventaID, tipo); err != nil {
+		if esFactura {
+			if err := tx.Model(&models.Factura{}).Where("venta_id = ?", ventaID).Updates(map[string]interface{}{
+				"cae":     cae.CAE,
+				"cae_vto": &cae.FchVto,
+				"estado":  models.EstadoAutorizado,
+			}).Error; err != nil {
+				return err
+			}
+		}
+		if err := encolarTarea(tx, ventaID, models.TareaImprimir); err != nil {
+			return err
+		}
+		if esFactura {
+			if err := encolarTarea(tx, ventaID, models.TareaEmailFactura); err != nil {
 				return err
 			}
 		}
 		return nil
 	})
 	if err != nil {
-		return fmt.Errorf("persistir CAE y encolar tareas: %w", err)
+		return nil, fmt.Errorf("persistir CAE: %w", err)
 	}
-	go w.procesarPendientes(context.Background())
-	return nil
+	return cae, nil
 }
 
 // imprimirTicket imprime el ticket por el puerto serie configurado (despliegue
@@ -209,6 +303,8 @@ type Worker struct {
 	cfg      *config.Config
 	imp      *impresora.Impresora
 	emailCli *email.Cliente
+	caeMu    sync.Mutex // serializa las solicitudes de CAE (evita doble CAE / carreras de numeración AFIP)
+	sweepMu  sync.Mutex // coalesce de barridos concurrentes (evita doble impresión/email)
 }
 
 func NuevoWorker(db *gorm.DB, cfg *config.Config, imp *impresora.Impresora, emailCli *email.Cliente) *Worker {
@@ -234,10 +330,17 @@ func (w *Worker) Iniciar(ctx context.Context, intervalo time.Duration) {
 }
 
 func (w *Worker) procesarPendientes(ctx context.Context) {
+	// Si ya hay un barrido corriendo, no arranco otro: el que corre procesará lo que
+	// se acabe de encolar. Evita que dos barridos ejecuten la misma tarea dos veces.
+	if !w.sweepMu.TryLock() {
+		return
+	}
+	defer w.sweepMu.Unlock()
+
 	var tareas []models.TareaPendiente
 	err := w.db.WithContext(ctx).
-		Where("estado IN ? AND intentos < ?",
-			[]models.EstadoTarea{models.TareaEstadoPendiente, models.TareaEstadoError}, maxIntentosTarea).
+		Where("estado IN ?", []models.EstadoTarea{models.TareaEstadoPendiente, models.TareaEstadoError}).
+		Order("created_at ASC"). // cronológico: las ventas más viejas consiguen CAE primero
 		Find(&tareas).Error
 	if err != nil {
 		slog.Error("outbox: leer tareas pendientes", "err", err)
@@ -245,13 +348,47 @@ func (w *Worker) procesarPendientes(ctx context.Context) {
 	}
 
 	for _, t := range tareas {
-		w.ejecutar(t)
+		if t.Intentos >= maxIntentos(t.Tipo) || !tareaLista(t) {
+			continue
+		}
+		w.ejecutar(ctx, t)
 	}
 }
 
-func (w *Worker) ejecutar(t models.TareaPendiente) {
+// maxIntentos define cuántas veces reintentar según el tipo: obtener el CAE se
+// reintenta durante horas (ARCA puede estar caído un buen rato), mientras que
+// imprimir/email se abandonan tras unos pocos intentos.
+func maxIntentos(tipo models.TipoTarea) int {
+	if tipo == models.TareaObtenerCAE {
+		return maxIntentosCAE
+	}
+	return maxIntentosTarea
+}
+
+// tareaLista aplica backoff exponencial (cap 5min) desde el último intento, para
+// no martillar a ARCA/impresora en cada poll cuando una tarea viene fallando.
+func tareaLista(t models.TareaPendiente) bool {
+	return time.Since(t.UpdatedAt) >= backoff(t.Intentos)
+}
+
+func backoff(intentos int) time.Duration {
+	if intentos <= 0 {
+		return 0
+	}
+	if intentos > 20 {
+		return 5 * time.Minute
+	}
+	if d := 5 * time.Second << uint(intentos-1); d < 5*time.Minute {
+		return d
+	}
+	return 5 * time.Minute
+}
+
+func (w *Worker) ejecutar(ctx context.Context, t models.TareaPendiente) {
 	var err error
 	switch t.Tipo {
+	case models.TareaObtenerCAE:
+		_, err = w.obtenerCAE(ctx, t.VentaID)
 	case models.TareaImprimir:
 		err = w.ejecutarImprimir(t.VentaID)
 	case models.TareaEmailFactura:
