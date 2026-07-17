@@ -18,12 +18,13 @@ import (
 )
 
 type SyncHandler struct {
-	db  *gorm.DB
-	cfg *config.Config
+	db     *gorm.DB
+	cfg    *config.Config
+	worker *Worker
 }
 
-func NuevoSyncHandler(db *gorm.DB, cfg *config.Config) *SyncHandler {
-	return &SyncHandler{db: db, cfg: cfg}
+func NuevoSyncHandler(db *gorm.DB, cfg *config.Config, worker *Worker) *SyncHandler {
+	return &SyncHandler{db: db, cfg: cfg, worker: worker}
 }
 
 type VentaOffline struct {
@@ -89,10 +90,19 @@ func (h *SyncHandler) procesarOffline(ctx context.Context, v VentaOffline) SyncR
 		return SyncResultado{ID: v.ID, Error: "UUID inválido", Success: false}
 	}
 
-	// Idempotencia — si ya existe, devolver éxito sin reprocesar
+	// Idempotencia real: si la venta ya existe pero se quedó sin CAE (ARCA falló
+	// en un intento anterior, después de crearla), hay que reintentar el CAE — no
+	// alcanza con que la fila exista para considerarla sincronizada.
 	var existente models.Venta
-	if h.db.Where("id = ?", ventaID).First(&existente).Error == nil {
-		return SyncResultado{ID: v.ID, Numero: existente.Numero, Success: true}
+	yaExiste := h.db.Preload("Items", func(d *gorm.DB) *gorm.DB {
+		return d.Order("orden ASC")
+	}).Where("id = ?", ventaID).First(&existente).Error == nil
+
+	if yaExiste {
+		if existente.CAE != "" {
+			return SyncResultado{ID: v.ID, Numero: existente.Numero, CAE: existente.CAE, Success: true}
+		}
+		return h.solicitarCAEYResultado(ctx, existente)
 	}
 
 	var numero string
@@ -128,17 +138,30 @@ func (h *SyncHandler) procesarOffline(ctx context.Context, v VentaOffline) SyncR
 		return SyncResultado{ID: v.ID, Error: err.Error(), Success: false}
 	}
 
-	// Calcular totales para CAE
-	var items []models.VentaItem
-	h.db.Where("venta_id = ?", ventaID).Order("orden ASC").Find(&items)
-	_, iva, total := models.TotalesDeItems(items)
+	var venta models.Venta
+	h.db.Preload("Items", func(d *gorm.DB) *gorm.DB {
+		return d.Order("orden ASC")
+	}).First(&venta, "id = ?", ventaID)
+
+	return h.solicitarCAEYResultado(ctx, venta)
+}
+
+// solicitarCAEYResultado pide el CAE para una venta ya persistida — recién creada
+// o de un reintento — y, si lo consigue, lo persiste junto con la tarea de
+// impresión. No pide número nuevo ni recrea nada: eso ya pasó antes de llamarla.
+func (h *SyncHandler) solicitarCAEYResultado(ctx context.Context, venta models.Venta) SyncResultado {
+	_, iva, total := models.TotalesDeItems(venta.Items)
 
 	vh := &VentasHandler{db: h.db, cfg: h.cfg}
-	caeResult, err := vh.solicitarCAE(ctx, ventaID, iva, total, items, 0, arca.TipoDocConsumidorFinal)
+	caeResult, err := vh.solicitarCAE(ctx, venta.ID, iva, total, venta.Items, 0, arca.TipoDocConsumidorFinal)
 	if err != nil {
-		slog.Error("CAE sync", "id", v.ID, "err", err)
-		return SyncResultado{ID: v.ID, Error: "CAE: " + err.Error(), Success: false}
+		slog.Error("CAE sync", "id", venta.ID, "err", err)
+		return SyncResultado{ID: venta.ID.String(), Numero: venta.Numero, Error: "CAE: " + err.Error(), Success: false}
 	}
 
-	return SyncResultado{ID: v.ID, Numero: numero, CAE: caeResult.CAE, Success: true}
+	if err := h.worker.PersistirCAEYEncolar(venta.ID, caeResult, models.TareaImprimir); err != nil {
+		slog.Error("sync: no se pudo encolar impresión", "id", venta.ID, "err", err)
+	}
+
+	return SyncResultado{ID: venta.ID.String(), Numero: venta.Numero, CAE: caeResult.CAE, Success: true}
 }

@@ -44,7 +44,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config, imp *impresora.Impresora, emai
 			reportes := handlers.NuevoReportesHandler(db)
 			protected.GET("/reportes/cierre", reportes.CierreCaja)
 
-			syncH := handlers.NuevoSyncHandler(db, cfg)
+			syncH := handlers.NuevoSyncHandler(db, cfg, worker)
 			protected.POST("/sync/ventas", syncH.SincronizarVentas)
 
 			empresa := handlers.NuevoEmpresaHandler(db, cfg)
