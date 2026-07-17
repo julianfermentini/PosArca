@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"sync"
+	"sort"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -54,17 +54,18 @@ func (h *SyncHandler) SincronizarVentas(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	resultados := make([]SyncResultado, len(req.Ventas))
 
-	var wg sync.WaitGroup
-	for i, v := range req.Ventas {
-		wg.Add(1)
-		go func(idx int, venta VentaOffline) {
-			defer wg.Done()
-			resultados[idx] = h.procesarOffline(ctx, venta)
-		}(i, v)
+	// Orden cronológico: el número de comprobante tiene que asignarse en el mismo
+	// orden en que se vendió, o ARCA puede rechazar un CAE con fecha "para atrás"
+	// respecto del último número autorizado. Por eso se procesa secuencial, no en
+	// paralelo — una venta a la vez, en el orden en que ocurrieron.
+	ventas := append([]VentaOffline(nil), req.Ventas...)
+	sort.Slice(ventas, func(i, j int) bool { return ventas[i].CreatedAt.Before(ventas[j].CreatedAt) })
+
+	resultados := make([]SyncResultado, len(ventas))
+	for i, v := range ventas {
+		resultados[i] = h.procesarOffline(ctx, v)
 	}
-	wg.Wait()
 
 	exitosos := 0
 	for _, r := range resultados {

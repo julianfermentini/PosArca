@@ -47,7 +47,12 @@ export async function obtenerVentasPendientes(): Promise<VentaOffline[]> {
     const store = tx.objectStore(STORE_VENTAS)
     const idx = store.index('estado_sync')
     const req = idx.getAll('PENDIENTE' satisfies EstadoSync)
-    req.onsuccess = () => resolve(req.result as VentaOffline[])
+    req.onsuccess = () => {
+      // IndexedDB no garantiza orden cronológico acá — lo forzamos por created_at
+      // para que el backend les asigne el CAE en el mismo orden en que se vendieron.
+      const ventas = (req.result as VentaOffline[]).sort((a, b) => a.created_at.localeCompare(b.created_at))
+      resolve(ventas)
+    }
     req.onerror = () => reject(req.error)
   })
 }

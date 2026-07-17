@@ -74,8 +74,13 @@ export interface SyncResultadoItem {
 }
 
 export const syncApi = {
+  // El backend procesa el lote secuencial (no en paralelo) para no perder el orden
+  // correlativo de numeración ante ARCA, así que puede tardar más que el timeout
+  // por defecto si hay muchas ventas pendientes.
   sincronizar: (ventas: VentaOffline[]) =>
-    api.post<ApiResponse<{ total: number; exitosos: number; resultados: SyncResultadoItem[] }>>('/sync/ventas', { ventas }),
+    api.post<ApiResponse<{ total: number; exitosos: number; resultados: SyncResultadoItem[] }>>(
+      '/sync/ventas', { ventas }, { timeout: 120000 },
+    ),
 }
 
 export interface Empresa {
