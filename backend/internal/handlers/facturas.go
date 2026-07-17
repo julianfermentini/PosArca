@@ -1,10 +1,8 @@
 package handlers
 
 import (
-	"context"
 	"log/slog"
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -15,7 +13,6 @@ import (
 	"pos-fiscal/internal/email"
 	"pos-fiscal/internal/impresora"
 	"pos-fiscal/internal/models"
-	"pos-fiscal/internal/pdf"
 )
 
 type FacturasHandler struct {
@@ -23,10 +20,11 @@ type FacturasHandler struct {
 	cfg      *config.Config
 	imp      *impresora.Impresora
 	emailCli *email.Cliente
+	worker   *Worker
 }
 
-func NuevoFacturasHandler(db *gorm.DB, cfg *config.Config, imp *impresora.Impresora, emailCli *email.Cliente) *FacturasHandler {
-	return &FacturasHandler{db: db, cfg: cfg, imp: imp, emailCli: emailCli}
+func NuevoFacturasHandler(db *gorm.DB, cfg *config.Config, imp *impresora.Impresora, emailCli *email.Cliente, worker *Worker) *FacturasHandler {
+	return &FacturasHandler{db: db, cfg: cfg, imp: imp, emailCli: emailCli, worker: worker}
 }
 
 type CrearFacturaRequest struct {
@@ -120,7 +118,11 @@ func (h *FacturasHandler) Crear(c *gin.Context) {
 		return
 	}
 
-	go h.procesarBackground(venta, factura, caeResult, total)
+	// Persistir CAE/QR en la venta y encolar impresión + email como tareas, en vez
+	// de dispararlas en una goroutine suelta que se pierde si el proceso se reinicia.
+	if err := h.worker.PersistirCAEYEncolar(ventaID, caeResult, models.TareaImprimir, models.TareaEmailFactura); err != nil {
+		slog.Error("factura creada pero no se pudieron encolar sus tareas", "err", err, "venta_id", ventaID)
+	}
 
 	c.JSON(http.StatusCreated, gin.H{
 		"success": true,
@@ -146,90 +148,4 @@ func (h *FacturasHandler) Listar(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": facturas})
-}
-
-func (h *FacturasHandler) procesarBackground(venta models.Venta, factura models.Factura, cae *arca.ResultadoCAE, total float64) {
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-
-	vh := &VentasHandler{db: h.db, cfg: h.cfg, impresora: h.imp}
-	vh.imprimirTicket(venta, cae)
-
-	// Leer config del negocio desde la BD (con fallback a .env)
-	emp := getEmpresaConf(h.db, h.cfg)
-
-	// Generar PDF
-	_, iva, _ := models.TotalesDeItems(venta.Items)
-
-	// Factura A si el cliente tiene CUIT válido (responsable inscripto),
-	// Factura B si es consumidor final — mismo criterio que la emisión del CAE.
-	letra := "B"
-	tipoComp := "Factura B"
-	condIVACliente := "Consumidor Final"
-	if parseCUIT(factura.CUITCliente) > 0 {
-		letra = "A"
-		tipoComp = "Factura A"
-		condIVACliente = "Responsable Inscripto"
-	}
-
-	items := make([]pdf.ItemPDF, len(venta.Items))
-	for i, it := range venta.Items {
-		items[i] = pdf.ItemPDF{
-			Descripcion:   it.Descripcion,
-			PrecioNeto:    it.PrecioNeto,
-			IVAPorcentaje: 21,
-			Total:         it.Total,
-		}
-	}
-
-	var caeVto time.Time
-	if factura.CAEVto != nil {
-		caeVto = *factura.CAEVto
-	}
-
-	datosPDF := pdf.DatosFacturaPDF{
-		NegocioNombre:  emp.RazonSocial,
-		NegocioDirec:   emp.Direccion,
-		NegocioTel:     emp.Telefono,
-		NegocioIVACond: emp.CondicionIVA,
-		CUIT:           emp.CUIT,
-		PuntoVenta:     emp.PuntoVenta,
-		Numero:         venta.Numero,
-		Fecha:          venta.CreatedAt,
-		TipoComp:       tipoComp,
-		LetraComp:      letra,
-		RazonSocial:    factura.RazonSocial,
-		CUITCliente:    factura.CUITCliente,
-		EmailCliente:   factura.EmailCliente,
-		CondIVACliente: condIVACliente,
-		Items:          items,
-		Subtotal:       total - iva,
-		IVA:            iva,
-		Total:          total,
-		MetodoPago:     string(venta.MetodoPago),
-		CAE:            factura.CAE,
-		CAEVto:         caeVto,
-	}
-
-	pdfBytes, err := pdf.Generar(datosPDF)
-	if err != nil {
-		slog.Error("generar pdf factura", "err", err, "numero", venta.Numero)
-	}
-
-	datosEmail := email.DatosFactura{
-		RazonSocial:   factura.RazonSocial,
-		CUIT:          factura.CUITCliente,
-		Numero:        venta.Numero,
-		Total:         total,
-		CAE:           factura.CAE,
-		PDFBytes:      pdfBytes,
-		NegocioNombre: emp.RazonSocial,
-	}
-
-	if err := h.emailCli.EnviarFactura(ctx, factura.EmailCliente, datosEmail); err != nil {
-		slog.Error("enviar email factura", "err", err)
-		return
-	}
-
-	h.db.Model(&factura).Update("email_enviado", true)
 }

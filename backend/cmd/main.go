@@ -14,6 +14,7 @@ import (
 	"pos-fiscal/internal/api"
 	"pos-fiscal/internal/db"
 	"pos-fiscal/internal/email"
+	"pos-fiscal/internal/handlers"
 	"pos-fiscal/internal/impresora"
 )
 
@@ -49,7 +50,12 @@ func main() {
 		FromName:     cfg.SMTPFromName,
 	})
 
-	router := api.SetupRouter(database, cfg, imp, emailCli)
+	workerCtx, cancelWorker := context.WithCancel(context.Background())
+	defer cancelWorker()
+	worker := handlers.NuevoWorker(database, cfg, imp, emailCli)
+	go worker.Iniciar(workerCtx, 5*time.Second)
+
+	router := api.SetupRouter(database, cfg, imp, emailCli, worker)
 
 	srv := &http.Server{
 		Addr:    ":" + cfg.Port,

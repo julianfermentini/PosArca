@@ -11,7 +11,7 @@ import (
 	"pos-fiscal/internal/middleware"
 )
 
-func SetupRouter(db *gorm.DB, cfg *config.Config, imp *impresora.Impresora, emailCli *email.Cliente) *gin.Engine {
+func SetupRouter(db *gorm.DB, cfg *config.Config, imp *impresora.Impresora, emailCli *email.Cliente, worker *handlers.Worker) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Logger(), gin.Recovery())
 	r.Use(corsMiddleware(cfg.CORSOrigins))
@@ -32,12 +32,12 @@ func SetupRouter(db *gorm.DB, cfg *config.Config, imp *impresora.Impresora, emai
 		protected := api.Group("/")
 		protected.Use(middleware.AuthRequired(cfg.JWTSecret))
 		{
-			ventas := handlers.NuevoVentasHandler(db, cfg, imp)
+			ventas := handlers.NuevoVentasHandler(db, cfg, imp, worker)
 			protected.POST("/ventas", ventas.Crear)
 			protected.GET("/ventas", ventas.Listar)
 			protected.GET("/ventas/dias", ventas.DiasConVentas)
 
-			facturas := handlers.NuevoFacturasHandler(db, cfg, imp, emailCli)
+			facturas := handlers.NuevoFacturasHandler(db, cfg, imp, emailCli, worker)
 			protected.POST("/facturas", facturas.Crear)
 			protected.GET("/facturas", facturas.Listar)
 

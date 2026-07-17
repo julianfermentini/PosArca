@@ -40,6 +40,7 @@ func migrar(db *gorm.DB) error {
 		&models.Producto{},
 		&models.ComprobanteContador{},
 		&models.ArcaTokenCache{},
+		&models.TareaPendiente{},
 	); err != nil {
 		return err
 	}

@@ -23,10 +23,11 @@ type VentasHandler struct {
 	db        *gorm.DB
 	cfg       *config.Config
 	impresora *impresora.Impresora
+	worker    *Worker
 }
 
-func NuevoVentasHandler(db *gorm.DB, cfg *config.Config, imp *impresora.Impresora) *VentasHandler {
-	return &VentasHandler{db: db, cfg: cfg, impresora: imp}
+func NuevoVentasHandler(db *gorm.DB, cfg *config.Config, imp *impresora.Impresora, worker *Worker) *VentasHandler {
+	return &VentasHandler{db: db, cfg: cfg, impresora: imp, worker: worker}
 }
 
 type CrearVentaRequest struct {
@@ -99,14 +100,11 @@ func (h *VentasHandler) Crear(c *gin.Context) {
 		return
 	}
 
-	// Persistir CAE para permitir reimpresión posterior
-	caeVto := caeResult.FchVto
-	h.db.Model(&models.Venta{}).Where("id = ?", ventaID).Updates(map[string]interface{}{
-		"cae":     caeResult.CAE,
-		"cae_vto": &caeVto,
-	})
-
-	go h.imprimirTicket(venta, caeResult)
+	// Persistir CAE/QR y encolar la impresión como tarea, en vez de dispararla
+	// en una goroutine suelta que se pierde si el proceso se reinicia.
+	if err := h.worker.PersistirCAEYEncolar(ventaID, caeResult, models.TareaImprimir); err != nil {
+		slog.Error("venta creada pero no se pudo encolar la impresión", "err", err, "venta_id", ventaID)
+	}
 
 	c.JSON(http.StatusCreated, gin.H{
 		"success": true,
@@ -251,59 +249,6 @@ func (h *VentasHandler) solicitarCAE(
 	}
 
 	return arca.SolicitarCAE(ctx, params, token, sign, h.cfg.ArcaEnv)
-}
-
-func (h *VentasHandler) imprimirTicket(venta models.Venta, cae *arca.ResultadoCAE) {
-	// En producción con tablet Android la impresión la maneja el frontend vía WebUSB/WebBluetooth.
-	// Esta función solo imprime si hay un puerto serial configurado (despliegue Linux/Raspberry Pi).
-	if !h.impresora.EstaConfigurada() {
-		return
-	}
-
-	var ticketItems []impresora.ItemTicket
-	for _, it := range venta.Items {
-		ticketItems = append(ticketItems, impresora.ItemTicket{
-			Descripcion: it.Descripcion,
-			PrecioNeto:  it.PrecioNeto,
-			Total:       it.Total,
-		})
-	}
-
-	subtotal, iva, total := models.TotalesDeItems(venta.Items)
-	emp := getEmpresaConf(h.db, h.cfg)
-
-	datos := impresora.DatosTicket{
-		RazonSocial: emp.RazonSocial,
-		CUIT:        h.cfg.ArcaCUIT,
-		PuntoVenta:  h.cfg.ArcaPuntoVenta,
-		TipoCmp:     string(venta.Tipo),
-		Numero:      venta.Numero,
-		Fecha:       venta.CreatedAt,
-		Items:       ticketItems,
-		Subtotal:    subtotal,
-		IVA:         iva,
-		Total:       total,
-		MetodoPago:  string(venta.MetodoPago),
-		CAE:         cae.CAE,
-		CAEVto:      cae.FchVto,
-		QRBase64:    cae.QRData,
-	}
-
-	escpos, err := impresora.GenerarESCPOS(datos)
-	if err != nil {
-		slog.Error("generar ESC/POS", "err", err)
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	if err := h.impresora.Imprimir(ctx, escpos); err != nil {
-		slog.Error("imprimir ticket", "err", err, "venta_id", venta.ID)
-		return
-	}
-
-	h.db.Model(&venta).Update("impreso", true)
 }
 
 func parseCUIT(cuit string) int64 {
