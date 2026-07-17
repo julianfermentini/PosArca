@@ -122,17 +122,22 @@ func (h *VentasHandler) Crear(c *gin.Context) {
 
 // DiasConVentas maneja GET /api/ventas/dias?mes=YYYY-MM
 func (h *VentasHandler) DiasConVentas(c *gin.Context) {
-	mes := c.Query("mes")
-	if _, err := time.Parse("2006-01", mes); err != nil {
-		mes = time.Now().Format("2006-01")
+	inicioMes, err := time.Parse("2006-01", c.Query("mes"))
+	if err != nil {
+		now := time.Now()
+		inicioMes = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
 	}
+	finMes := inicioMes.AddDate(0, 1, 0)
+
 	var fechas []string
+	// El rango en el WHERE puede usar el índice de created_at; TO_CHAR solo se usa
+	// para formatear la salida, no para filtrar.
 	h.db.Raw(
 		`SELECT DISTINCT TO_CHAR(created_at, 'YYYY-MM-DD') AS fecha
 		 FROM ventas
-		 WHERE TO_CHAR(created_at, 'YYYY-MM') = ?
+		 WHERE created_at >= ? AND created_at < ?
 		 ORDER BY fecha ASC`,
-		mes,
+		inicioMes, finMes,
 	).Scan(&fechas)
 	if fechas == nil {
 		fechas = []string{}
@@ -150,7 +155,8 @@ func (h *VentasHandler) Listar(c *gin.Context) {
 	if fecha := c.Query("fecha"); fecha != "" {
 		t, err := time.Parse("2006-01-02", fecha)
 		if err == nil {
-			query = query.Where("DATE(created_at) = ?", t.Format("2006-01-02"))
+			inicio, fin := rangoDelDia(t)
+			query = query.Where("created_at >= ? AND created_at < ?", inicio, fin)
 		}
 	}
 
@@ -217,7 +223,7 @@ func (h *VentasHandler) solicitarCAE(
 	docTipo int,
 ) (*arca.ResultadoCAE, error) {
 	cuitInt := parseCUIT(h.cfg.ArcaCUIT)
-	token, sign, err := arca.GetToken(ctx, cuitInt, h.cfg.ArcaCertPath, h.cfg.ArcaKeyPath, h.cfg.ArcaEnv)
+	token, sign, err := arca.GetToken(ctx, h.db, cuitInt, h.cfg.ArcaCertPath, h.cfg.ArcaKeyPath, h.cfg.ArcaEnv)
 	if err != nil {
 		return nil, err
 	}

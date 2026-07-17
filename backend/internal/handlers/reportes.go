@@ -47,13 +47,13 @@ func (h *ReportesHandler) CierreCaja(c *gin.Context) {
 		}
 	}
 
-	fechaSQL := fecha.Format("2006-01-02")
+	inicio, fin := rangoDelDia(fecha)
 	var resumen ResumenCierre
 
 	// Conteos por tipo
-	h.db.Model(&models.Venta{}).Where("DATE(created_at) = ?", fechaSQL).Count(&resumen.TotalVentas)
-	h.db.Model(&models.Venta{}).Where("DATE(created_at) = ? AND tipo = ?", fechaSQL, models.TipoTicket).Count(&resumen.TotalTickets)
-	h.db.Model(&models.Venta{}).Where("DATE(created_at) = ? AND tipo = ?", fechaSQL, models.TipoFactura).Count(&resumen.TotalFacturas)
+	h.db.Model(&models.Venta{}).Where("created_at >= ? AND created_at < ?", inicio, fin).Count(&resumen.TotalVentas)
+	h.db.Model(&models.Venta{}).Where("created_at >= ? AND created_at < ? AND tipo = ?", inicio, fin, models.TipoTicket).Count(&resumen.TotalTickets)
+	h.db.Model(&models.Venta{}).Where("created_at >= ? AND created_at < ? AND tipo = ?", inicio, fin, models.TipoFactura).Count(&resumen.TotalFacturas)
 
 	// Totales monetarios: JOIN ventas ↔ venta_items
 	type montos struct {
@@ -67,7 +67,7 @@ func (h *ReportesHandler) CierreCaja(c *gin.Context) {
 			COALESCE(SUM(vi.iva),   0) AS monto_iva
 		FROM ventas v
 		JOIN venta_items vi ON vi.venta_id = v.id
-		WHERE DATE(v.created_at) = ?`, fechaSQL).Scan(&m)
+		WHERE v.created_at >= ? AND v.created_at < ?`, inicio, fin).Scan(&m)
 
 	resumen.MontoTotal = m.MontoTotal
 	resumen.MontoIVA = m.MontoIVA
@@ -79,8 +79,8 @@ func (h *ReportesHandler) CierreCaja(c *gin.Context) {
 			SELECT COALESCE(SUM(vi.total), 0)
 			FROM ventas v
 			JOIN venta_items vi ON vi.venta_id = v.id
-			WHERE DATE(v.created_at) = ? AND v.metodo_pago = ?`,
-			fechaSQL, metodo).Scan(&total)
+			WHERE v.created_at >= ? AND v.created_at < ? AND v.metodo_pago = ?`,
+			inicio, fin, metodo).Scan(&total)
 		return total
 	}
 

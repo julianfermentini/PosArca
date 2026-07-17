@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"time"
+
 	"gorm.io/gorm"
 
 	"pos-fiscal/config"
@@ -25,4 +27,12 @@ func getEmpresaConf(db *gorm.DB, cfg *config.Config) models.ConfigEmpresa {
 		emp.CUIT = cfg.ArcaCUIT
 	}
 	return emp
+}
+
+// rangoDelDia devuelve [inicio, fin) del día calendario de fecha, para filtrar
+// por created_at con una comparación que puede usar el índice de la columna
+// (a diferencia de envolverla en DATE(...), que fuerza un scan completo).
+func rangoDelDia(fecha time.Time) (inicio, fin time.Time) {
+	inicio = time.Date(fecha.Year(), fecha.Month(), fecha.Day(), 0, 0, 0, 0, fecha.Location())
+	return inicio, inicio.Add(24 * time.Hour)
 }

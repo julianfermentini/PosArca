@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/x509"
 	"encoding/base64"
-	"encoding/json"
 	"encoding/pem"
 	"encoding/xml"
 	"fmt"
@@ -17,40 +16,34 @@ import (
 	"time"
 
 	"go.mozilla.org/pkcs7"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
+
+	"pos-fiscal/internal/models"
 )
 
-const tokenCacheFile = "/app/token_cache.json"
-
-type tokenDisk struct {
-	Token      string    `json:"token"`
-	Sign       string    `json:"sign"`
-	Expiration time.Time `json:"expiration"`
+// cargarTokenDeBD busca un token vigente guardado por cualquier instancia del backend.
+func cargarTokenDeBD(db *gorm.DB, cuit int64) (token, sign string, expiration time.Time, ok bool) {
+	var fila models.ArcaTokenCache
+	if err := db.First(&fila, "cuit = ?", cuit).Error; err != nil {
+		return "", "", time.Time{}, false
+	}
+	if time.Now().After(fila.Expiration) {
+		return "", "", time.Time{}, false
+	}
+	return fila.Token, fila.Sign, fila.Expiration, true
 }
 
-func loadTokenFromDisk() {
-	data, err := os.ReadFile(tokenCacheFile)
+// guardarTokenEnBD persiste el token para que otras instancias/redeploys lo reutilicen.
+func guardarTokenEnBD(db *gorm.DB, cuit int64, token, sign string, expiration time.Time) {
+	fila := models.ArcaTokenCache{CUIT: cuit, Token: token, Sign: sign, Expiration: expiration}
+	err := db.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "cuit"}},
+		DoUpdates: clause.AssignmentColumns([]string{"token", "sign", "expiration"}),
+	}).Create(&fila).Error
 	if err != nil {
-		return
+		slog.Warn("no se pudo persistir el token ARCA en la base", "err", err)
 	}
-	var td tokenDisk
-	if err := json.Unmarshal(data, &td); err != nil {
-		return
-	}
-	if time.Now().Before(td.Expiration) {
-		cache.token = td.Token
-		cache.sign = td.Sign
-		cache.expiration = td.Expiration
-		slog.Info("token ARCA cargado desde disco", "expira", td.Expiration.Format(time.RFC3339))
-	}
-}
-
-func saveTokenToDisk(token, sign string, expiration time.Time) {
-	td := tokenDisk{Token: token, Sign: sign, Expiration: expiration}
-	data, err := json.Marshal(td)
-	if err != nil {
-		return
-	}
-	_ = os.WriteFile(tokenCacheFile, data, 0600)
 }
 
 const (
@@ -81,8 +74,10 @@ func EsMockMode(certPath, keyPath, env string) bool {
 	return os.IsNotExist(errCert) || os.IsNotExist(errKey)
 }
 
-// GetToken devuelve el token vigente o renueva si expiró.
-func GetToken(ctx context.Context, cuit int64, certPath, keyPath, env string) (token, sign string, err error) {
+// GetToken devuelve el token vigente o renueva si expiró. El token vive en la base
+// (tabla arca_token_cache), compartido entre instancias; el cache en memoria es solo
+// una optimización para no pegarle a la base en cada solicitud de CAE.
+func GetToken(ctx context.Context, db *gorm.DB, cuit int64, certPath, keyPath, env string) (token, sign string, err error) {
 	if EsMockMode(certPath, keyPath, env) {
 		slog.Warn("ARCA mock activo — certs no encontrados, usando datos falsos para testing")
 		return mockToken, mockSign, nil
@@ -91,13 +86,13 @@ func GetToken(ctx context.Context, cuit int64, certPath, keyPath, env string) (t
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
 
-	// Intentar cargar desde disco si la memoria está vacía
-	if cache.token == "" {
-		loadTokenFromDisk()
-	}
-
 	if time.Now().Before(cache.expiration) {
 		return cache.token, cache.sign, nil
+	}
+
+	if t, s, exp, ok := cargarTokenDeBD(db, cuit); ok {
+		cache.token, cache.sign, cache.expiration = t, s, exp
+		return t, s, nil
 	}
 
 	slog.Info("renovando token ARCA/AFIP")
@@ -110,7 +105,7 @@ func GetToken(ctx context.Context, cuit int64, certPath, keyPath, env string) (t
 	cache.token = token
 	cache.sign = sign
 	cache.expiration = exp
-	saveTokenToDisk(token, sign, exp)
+	guardarTokenEnBD(db, cuit, token, sign, exp)
 
 	return token, sign, nil
 }

@@ -29,7 +29,7 @@ type Venta struct {
 	Sincronizado bool            `gorm:"default:false" json:"sincronizado"`
 	CAE          string          `gorm:"default:''" json:"cae,omitempty"`
 	CAEVto       *time.Time      `json:"cae_vto,omitempty"`
-	CreatedAt    time.Time       `json:"created_at"`
+	CreatedAt    time.Time       `gorm:"index" json:"created_at"`
 	Items        []VentaItem     `gorm:"foreignKey:VentaID;constraint:OnDelete:CASCADE" json:"items,omitempty"`
 }
 
