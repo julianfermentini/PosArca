@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -18,6 +19,20 @@ import (
 
 func main() {
 	cfg := config.Load()
+
+	// Si los certs vienen como variables de entorno (Railway), escribirlos a disco
+	if content := os.Getenv("ARCA_CERT_CONTENT"); content != "" {
+		_ = os.MkdirAll(filepath.Dir(cfg.ArcaCertPath), 0700)
+		if err := os.WriteFile(cfg.ArcaCertPath, []byte(content), 0600); err == nil {
+			slog.Info("certificado ARCA escrito desde variable de entorno")
+		}
+	}
+	if content := os.Getenv("ARCA_KEY_CONTENT"); content != "" {
+		_ = os.MkdirAll(filepath.Dir(cfg.ArcaKeyPath), 0700)
+		if err := os.WriteFile(cfg.ArcaKeyPath, []byte(content), 0600); err == nil {
+			slog.Info("clave privada ARCA escrita desde variable de entorno")
+		}
+	}
 
 	database, err := db.Connect(cfg)
 	if err != nil {
