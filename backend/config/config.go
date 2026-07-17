@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/joho/godotenv"
 )
@@ -28,6 +29,7 @@ type Config struct {
 	PrinterBaud    int
 	Port           string
 	JWTSecret      string
+	CORSOrigins    []string
 }
 
 func Load() *Config {
@@ -58,7 +60,19 @@ func Load() *Config {
 		PrinterBaud:    printerBaud,
 		Port:           getEnv("PORT", "8080"),
 		JWTSecret:      mustGetEnvFailFast("JWT_SECRET"),
+		CORSOrigins:    parseOrigins(getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:5173")),
 	}
+}
+
+// parseOrigins separa una lista de orígenes separados por coma (sin espacios sobrantes).
+func parseOrigins(raw string) []string {
+	var origins []string
+	for _, o := range strings.Split(raw, ",") {
+		if o = strings.TrimSpace(o); o != "" {
+			origins = append(origins, o)
+		}
+	}
+	return origins
 }
 
 func getEnv(key, fallback string) string {
