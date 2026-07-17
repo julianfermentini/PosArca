@@ -27,6 +27,7 @@ type Config struct {
 	PrinterPort    string
 	PrinterBaud    int
 	Port           string
+	JWTSecret      string
 }
 
 func Load() *Config {
@@ -56,6 +57,7 @@ func Load() *Config {
 		PrinterPort:    getEnv("PRINTER_PORT", "/dev/ttyUSB0"),
 		PrinterBaud:    printerBaud,
 		Port:           getEnv("PORT", "8080"),
+		JWTSecret:      mustGetEnvFailFast("JWT_SECRET"),
 	}
 }
 
@@ -70,6 +72,17 @@ func mustGetEnv(key string) string {
 	v := os.Getenv(key)
 	if v == "" {
 		slog.Warn("variable de entorno no configurada", "key", key)
+	}
+	return v
+}
+
+// mustGetEnvFailFast aborta el arranque si falta una variable que no admite
+// ningún valor por defecto seguro (a diferencia de mustGetEnv, que solo avisa).
+func mustGetEnvFailFast(key string) string {
+	v := os.Getenv(key)
+	if v == "" {
+		slog.Error("variable de entorno obligatoria no configurada, abortando arranque", "key", key)
+		os.Exit(1)
 	}
 	return v
 }

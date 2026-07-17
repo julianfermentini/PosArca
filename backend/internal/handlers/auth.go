@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -14,11 +13,12 @@ import (
 )
 
 type AuthHandler struct {
-	db *gorm.DB
+	db        *gorm.DB
+	jwtSecret string
 }
 
-func NuevoAuthHandler(db *gorm.DB) *AuthHandler {
-	return &AuthHandler{db: db}
+func NuevoAuthHandler(db *gorm.DB, jwtSecret string) *AuthHandler {
+	return &AuthHandler{db: db, jwtSecret: jwtSecret}
 }
 
 type RegisterRequest struct {
@@ -63,7 +63,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	token, err := generarToken(user)
+	token, err := generarToken(user, h.jwtSecret)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "error generando token"})
 		return
@@ -98,7 +98,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	token, err := generarToken(user)
+	token, err := generarToken(user, h.jwtSecret)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "error generando token"})
 		return
@@ -121,8 +121,7 @@ func (h *AuthHandler) HasUsers(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{"has_users": count > 0}})
 }
 
-func generarToken(user models.User) (string, error) {
-	secret := jwtSecret()
+func generarToken(user models.User, secret string) (string, error) {
 	claims := jwt.MapClaims{
 		"sub":            user.ID.String(),
 		"email":          user.Email,
@@ -131,11 +130,4 @@ func generarToken(user models.User) (string, error) {
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString([]byte(secret))
-}
-
-func jwtSecret() string {
-	if s := os.Getenv("JWT_SECRET"); s != "" {
-		return s
-	}
-	return "posarca-dev-secret-cambiar-en-produccion"
 }

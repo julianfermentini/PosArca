@@ -19,7 +19,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config, imp *impresora.Impresora, emai
 	api := r.Group("/api")
 	{
 		// Rutas públicas
-		auth := handlers.NuevoAuthHandler(db)
+		auth := handlers.NuevoAuthHandler(db, cfg.JWTSecret)
 		api.POST("/auth/register", auth.Register)
 		api.POST("/auth/login", auth.Login)
 		api.GET("/auth/status", auth.HasUsers)
@@ -30,7 +30,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config, imp *impresora.Impresora, emai
 
 		// Rutas protegidas
 		protected := api.Group("/")
-		protected.Use(middleware.AuthRequired())
+		protected.Use(middleware.AuthRequired(cfg.JWTSecret))
 		{
 			ventas := handlers.NuevoVentasHandler(db, cfg, imp)
 			protected.POST("/ventas", ventas.Crear)
