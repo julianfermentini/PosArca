@@ -199,7 +199,7 @@ export function buildTicketBytes(d: DatosTicketFront): Uint8Array {
     // CAE y vencimiento en una sola línea (39 chars — cabe en 42)
     enc.line(`C.A.E.: ${d.cae}  VTO: ${vtoStr}`)
     enc.line('CODIGO QR ARCA  R.G. 4892/2020')
-    enc.qrCode(buildArcaQR(d), 5)
+    enc.qrCode(buildArcaQR(d), 3)
     enc.lf(1).left()
     // Transparencia Fiscal al Consumidor — Ley 27.743 / RG ARCA 5614/2024
     enc.line('REGIMEN TRANSP.FISCAL AL CONS. LEY 27.743')
