@@ -230,6 +230,7 @@ export default function VentaPage() {
                 metodoPago: metodoPago,
                 cae:        data.data.cae ?? '',
                 caeVto:     data.data.cae_vto ?? '',
+                qrData:     data.data.qr_data ?? '',
               })
             }
           }

@@ -43,9 +43,11 @@ export interface CrearFacturaPayload {
 
 export const ventasApi = {
   // pendiente_cae = true cuando ARCA no estaba disponible: la venta quedó registrada
-  // y el CAE se conseguirá en segundo plano; cae/cae_vto vienen vacíos en ese caso.
+  // y el CAE se conseguirá en segundo plano; cae/cae_vto/qr_data vienen vacíos en
+  // ese caso. Cuando hay CAE, numero pasa a ser el número real que autorizó ARCA
+  // (no el contador local) — es el que hay que imprimir/mostrar.
   crear: (payload: CrearVentaPayload) =>
-    api.post<ApiResponse<{ id: string; numero: string; cae?: string; cae_vto?: string; total: number; pendiente_cae: boolean }>>('/ventas', payload),
+    api.post<ApiResponse<{ id: string; numero: string; cae?: string; cae_vto?: string; qr_data?: string; total: number; pendiente_cae: boolean }>>('/ventas', payload),
 
   listar: (fecha?: string) =>
     api.get<ApiResponse<Venta[]>>('/ventas', { params: fecha ? { fecha } : {} }),
@@ -56,7 +58,7 @@ export const ventasApi = {
 
 export const facturasApi = {
   crear: (payload: CrearFacturaPayload) =>
-    api.post<ApiResponse<{ id: string; numero: string; cae?: string; cae_vto?: string; email_enviado: boolean; pendiente_cae: boolean }>>('/facturas', payload),
+    api.post<ApiResponse<{ id: string; numero: string; cae?: string; cae_vto?: string; qr_data?: string; email_enviado: boolean; pendiente_cae: boolean }>>('/facturas', payload),
 
   listar: () =>
     api.get<ApiResponse<Factura[]>>('/facturas'),

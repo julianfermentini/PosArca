@@ -116,13 +116,19 @@ func (w *Worker) obtenerCAE(ctx context.Context, ventaID uuid.UUID) (*arca.Resul
 		return nil, err
 	}
 
+	// numeroFiscal es el número que ARCA autorizó de verdad (distinto del Numero
+	// local/provisional) — es lo único que hay que imprimir/mostrar/poner en el QR
+	// una vez que hay CAE, para que coincida con lo que ARCA tiene registrado.
+	numeroFiscal := fmt.Sprintf("%03d-%08d", w.cfg.ArcaPuntoVenta, cae.NroCmp)
+
 	// Persistir CAE/QR y encolar downstream en una sola transacción, para que nunca
 	// quede un CAE sin las tareas que lo imprimen/emailean.
 	err = w.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&models.Venta{}).Where("id = ?", ventaID).Updates(map[string]interface{}{
-			"cae":     cae.CAE,
-			"cae_vto": &cae.FchVto,
-			"qr_data": cae.QRData,
+			"numero_fiscal": numeroFiscal,
+			"cae":           cae.CAE,
+			"cae_vto":       &cae.FchVto,
+			"qr_data":       cae.QRData,
 		}).Error; err != nil {
 			return err
 		}
@@ -181,7 +187,7 @@ func imprimirTicket(db *gorm.DB, cfg *config.Config, imp *impresora.Impresora, v
 		CUIT:        cfg.ArcaCUIT,
 		PuntoVenta:  cfg.ArcaPuntoVenta,
 		TipoCmp:     string(venta.Tipo),
-		Numero:      venta.Numero,
+		Numero:      venta.NumeroFiscal,
 		Fecha:       venta.CreatedAt,
 		Items:       ticketItems,
 		Subtotal:    subtotal,
@@ -256,7 +262,7 @@ func enviarFacturaPorEmail(db *gorm.DB, cfg *config.Config, emailCli *email.Clie
 		NegocioIVACond: emp.CondicionIVA,
 		CUIT:           emp.CUIT,
 		PuntoVenta:     emp.PuntoVenta,
-		Numero:         venta.Numero,
+		Numero:         venta.NumeroFiscal,
 		Fecha:          venta.CreatedAt,
 		TipoComp:       tipoComp,
 		LetraComp:      letra,
@@ -282,7 +288,7 @@ func enviarFacturaPorEmail(db *gorm.DB, cfg *config.Config, emailCli *email.Clie
 	datosEmail := email.DatosFactura{
 		RazonSocial:   factura.RazonSocial,
 		CUIT:          factura.CUITCliente,
-		Numero:        venta.Numero,
+		Numero:        venta.NumeroFiscal,
 		Total:         total,
 		CAE:           factura.CAE,
 		PDFBytes:      pdfBytes,

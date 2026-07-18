@@ -90,27 +90,13 @@ export interface DatosTicketFront {
   metodoPago:         string
   cae:                string
   caeVto:             string
+  // Payload base64 del QR ARCA, ya armado por el backend con el número de
+  // comprobante REAL que autorizó ARCA (no el número local/provisional) — no
+  // reconstruir el QR acá, para que nunca pueda desincronizarse del real.
+  qrData:             string
   // Overrides para reimpresión (muestra fecha/hora original)
   fechaHora?: string   // ej. "14/07/2026  14:18:54"
   fechaISO?:  string   // ej. "2026-07-14" — para el QR ARCA
-}
-
-// ─── Construye la URL del QR ARCA según RG 5616/2024 ──────────────────────────
-function buildArcaQR(d: DatosTicketFront): string {
-  const cuitNum = parseInt(d.cuit.replace(/\D/g, ''), 10) || 0
-  const parts   = d.numero.split('-')
-  const ptoVta  = parseInt(parts[0] ?? '1', 10) || d.puntoVenta
-  const nroCmp  = parseInt(parts[1] ?? '0', 10) || 0
-  const fecha   = d.fechaISO ?? new Date().toISOString().slice(0, 10)
-  const payload = {
-    ver: 1, fecha, cuit: cuitNum, ptoVta,
-    tipoCmp: 6, nroCmp,
-    importe: d.total, moneda: 'PES', ctz: 1,
-    tipoDocRec: 99, nroDocRec: 0,
-    tipoCodAut: 'E',
-    codAut: parseInt(d.cae, 10) || 0,
-  }
-  return `https://www.afip.gov.ar/fe/qr/?p=${btoa(JSON.stringify(payload))}`
 }
 
 function fmtCuit(cuit: string): string {
@@ -199,7 +185,7 @@ export function buildTicketBytes(d: DatosTicketFront): Uint8Array {
     // CAE y vencimiento en una sola línea (39 chars — cabe en 42)
     enc.line(`C.A.E.: ${d.cae}  VTO: ${vtoStr}`)
     enc.line('CODIGO QR ARCA  R.G. 4892/2020')
-    enc.qrCode(buildArcaQR(d), 3)
+    if (d.qrData) enc.qrCode(`https://www.afip.gov.ar/fe/qr/?p=${d.qrData}`, 3)
     enc.lf(1).left()
     // Transparencia Fiscal al Consumidor — Ley 27.743 / RG ARCA 5614/2024
     enc.line('REGIMEN TRANSP.FISCAL AL CONS. LEY 27.743')

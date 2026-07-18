@@ -20,16 +20,24 @@ const (
 
 // Venta representa un comprobante (ticket o factura).
 // Los ítems y montos viven en venta_items — esta tabla no almacena totales.
+//
+// Numero es un contador local propio, asignado al crear la venta — antes de
+// pedirle nada a ARCA — para tener algo que mostrar mientras el CAE está
+// pendiente. NumeroFiscal es el número real que asignó ARCA (CbteNro de
+// FECAESolicitar), recién disponible cuando se autoriza el CAE. Son dos
+// numeraciones independientes: el ticket/factura impreso y el QR (que ARCA
+// valida contra sus propios registros) tienen que usar NumeroFiscal, no Numero.
 type Venta struct {
 	ID           uuid.UUID       `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
 	Tipo         TipoComprobante `gorm:"not null;uniqueIndex:idx_ventas_tipo_numero" json:"tipo"`
 	Numero       string          `gorm:"uniqueIndex:idx_ventas_tipo_numero" json:"numero,omitempty"`
+	NumeroFiscal string          `gorm:"column:numero_fiscal;default:''" json:"numero_fiscal,omitempty"`
 	MetodoPago   MetodoPago      `gorm:"not null" json:"metodo_pago"`
 	Impreso      bool            `gorm:"default:false" json:"impreso"`
 	Sincronizado bool            `gorm:"default:false" json:"sincronizado"`
 	CAE          string          `gorm:"default:''" json:"cae,omitempty"`
 	CAEVto       *time.Time      `json:"cae_vto,omitempty"`
-	QRData       string          `gorm:"column:qr_data;default:''" json:"-"`
+	QRData       string          `gorm:"column:qr_data;default:''" json:"qr_data,omitempty"`
 	CreatedAt    time.Time       `gorm:"index" json:"created_at"`
 	Items        []VentaItem     `gorm:"foreignKey:VentaID;constraint:OnDelete:CASCADE" json:"items,omitempty"`
 }

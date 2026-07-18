@@ -101,9 +101,13 @@ func (h *VentasHandler) Crear(c *gin.Context) {
 		slog.Warn("venta sin CAE — ARCA no disponible, pendiente de reintento", "venta_id", ventaID, "err", caeErr)
 		data["pendiente_cae"] = true
 	} else {
+		// numero acá se reemplaza por el número real que autorizó ARCA — el que
+		// realmente hay que imprimir/mostrar, no el contador local provisorio.
 		data["pendiente_cae"] = false
+		data["numero"] = fmt.Sprintf("%03d-%08d", h.cfg.ArcaPuntoVenta, cae.NroCmp)
 		data["cae"] = cae.CAE
 		data["cae_vto"] = cae.FchVto.Format("2006-01-02")
+		data["qr_data"] = cae.QRData
 	}
 	c.JSON(http.StatusCreated, gin.H{"success": true, "data": data})
 }

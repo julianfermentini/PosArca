@@ -18,11 +18,15 @@ export interface Venta {
   id: string
   tipo: TipoComprobante
   numero: string
+  // Número real que autorizó ARCA — distinto de numero (contador local/provisorio).
+  // Es el que hay que imprimir/mostrar/poner en el QR una vez que hay CAE.
+  numero_fiscal?: string
   metodo_pago: MetodoPago
   impreso: boolean
   sincronizado: boolean
   cae?: string
   cae_vto?: string
+  qr_data?: string
   created_at: string
   items: VentaItem[]
 }

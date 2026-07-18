@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 
@@ -109,8 +110,10 @@ func (h *FacturasHandler) Crear(c *gin.Context) {
 		data["pendiente_cae"] = true
 	} else {
 		data["pendiente_cae"] = false
+		data["numero"] = fmt.Sprintf("%03d-%08d", h.cfg.ArcaPuntoVenta, cae.NroCmp)
 		data["cae"] = cae.CAE
 		data["cae_vto"] = cae.FchVto.Format("2006-01-02")
+		data["qr_data"] = cae.QRData
 	}
 	c.JSON(http.StatusCreated, gin.H{"success": true, "data": data})
 }
