@@ -114,18 +114,20 @@ func (h *VentasHandler) Crear(c *gin.Context) {
 
 // DiasConVentas maneja GET /api/ventas/dias?mes=YYYY-MM
 func (h *VentasHandler) DiasConVentas(c *gin.Context) {
-	inicioMes, err := time.Parse("2006-01", c.Query("mes"))
+	inicioMes, err := time.ParseInLocation("2006-01", c.Query("mes"), zonaHoraria)
 	if err != nil {
-		now := time.Now()
-		inicioMes = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+		now := time.Now().In(zonaHoraria)
+		inicioMes = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, zonaHoraria)
 	}
 	finMes := inicioMes.AddDate(0, 1, 0)
 
 	var fechas []string
 	// El rango en el WHERE puede usar el índice de created_at; TO_CHAR solo se usa
-	// para formatear la salida, no para filtrar.
+	// para formatear la salida, no para filtrar. Se convierte a la zona del
+	// negocio antes de extraer el día — si no, un created_at guardado como
+	// instante UTC puede caer en el día siguiente según el reloj de Postgres.
 	h.db.Raw(
-		`SELECT DISTINCT TO_CHAR(created_at, 'YYYY-MM-DD') AS fecha
+		`SELECT DISTINCT TO_CHAR(created_at AT TIME ZONE 'America/Argentina/Buenos_Aires', 'YYYY-MM-DD') AS fecha
 		 FROM ventas
 		 WHERE created_at >= ? AND created_at < ?
 		 ORDER BY fecha ASC`,
@@ -145,7 +147,7 @@ func (h *VentasHandler) Listar(c *gin.Context) {
 	}).Order("created_at desc").Limit(100)
 
 	if fecha := c.Query("fecha"); fecha != "" {
-		t, err := time.Parse("2006-01-02", fecha)
+		t, err := time.ParseInLocation("2006-01-02", fecha, zonaHoraria)
 		if err == nil {
 			inicio, fin := rangoDelDia(t)
 			query = query.Where("created_at >= ? AND created_at < ?", inicio, fin)

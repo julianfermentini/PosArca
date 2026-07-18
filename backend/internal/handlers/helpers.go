@@ -1,13 +1,34 @@
 package handlers
 
 import (
+	"log/slog"
 	"time"
 
 	"gorm.io/gorm"
 
+	// tzdata embebe la base IANA en el binario — sin esto, time.LoadLocation
+	// puede fallar si el contenedor no trae el paquete de sistema tzdata.
+	_ "time/tzdata"
+
 	"pos-fiscal/config"
 	"pos-fiscal/internal/models"
 )
+
+// zonaHoraria es la zona de referencia del negocio (Argentina) para decidir a qué
+// "día" pertenece una venta. Los query params de fecha (?fecha=, ?mes=) se
+// interpretan en esta zona — parsear en UTC (el default de time.Parse) haría que
+// una venta de después de las ~21hs cayera en el día siguiente para los filtros
+// de reportes, aunque para el negocio siga siendo "hoy".
+var zonaHoraria = cargarZonaHoraria()
+
+func cargarZonaHoraria() *time.Location {
+	loc, err := time.LoadLocation("America/Argentina/Buenos_Aires")
+	if err != nil {
+		slog.Error("no se pudo cargar America/Argentina/Buenos_Aires, usando UTC-3 fijo", "err", err)
+		return time.FixedZone("ART", -3*60*60)
+	}
+	return loc
+}
 
 // getEmpresaConf obtiene la configuración del negocio desde la BD.
 // Si la BD no tiene datos todavía, usa los valores del .env como fallback.

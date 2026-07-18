@@ -38,9 +38,9 @@ func (h *ReportesHandler) CierreCaja(c *gin.Context) {
 	var err error
 
 	if fechaStr == "" {
-		fecha = time.Now()
+		fecha = time.Now().In(zonaHoraria)
 	} else {
-		fecha, err = time.Parse("2006-01-02", fechaStr)
+		fecha, err = time.ParseInLocation("2006-01-02", fechaStr, zonaHoraria)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "fecha inválida, usar YYYY-MM-DD"})
 			return
