@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -23,6 +24,10 @@ const (
 	maxIntentosCAE   = 288              // obtener CAE: ~24h reintentando cada ~5min si ARCA está caído
 	timeoutCAE       = 12 * time.Second // techo por intento de CAE: acota cuánto se retiene caeMu si ARCA cuelga
 )
+
+// errCAEBloqueadaPorOrden indica que esta venta espera su turno (orden estricto),
+// no que haya fallado. El worker no debe gastarle intentos ni marcarla ERROR.
+var errCAEBloqueadaPorOrden = errors.New("hay una venta anterior del mismo tipo todavía sin CAE")
 
 // encolarTarea registra un efecto secundario pendiente (obtener CAE, imprimir, email).
 // Se llama dentro de la misma transacción que crea la venta/factura, para que
@@ -96,6 +101,16 @@ func (w *Worker) obtenerCAE(ctx context.Context, ventaID uuid.UUID) (*arca.Resul
 		return &arca.ResultadoCAE{CAE: venta.CAE, FchVto: vto, QRData: venta.QRData}, nil
 	}
 
+	// Orden estricto: no autorizar esta venta si hay una anterior del mismo tipo
+	// (ticket vs. factura son secuencias separadas en ARCA) que todavía no tiene
+	// CAE. Evita que ARCA autorice fuera de orden cronológico por procesar una
+	// venta más nueva mientras una más vieja sigue reintentando.
+	if bloqueada, err := w.hayAnteriorSinCAE(venta.Tipo, venta.CreatedAt, venta.ID); err != nil {
+		return nil, fmt.Errorf("chequear orden: %w", err)
+	} else if bloqueada {
+		return nil, errCAEBloqueadaPorOrden
+	}
+
 	docNro, docTipo := int64(0), arca.TipoDocConsumidorFinal
 	esFactura := venta.Tipo == models.TipoFactura
 	if esFactura {
@@ -155,6 +170,82 @@ func (w *Worker) obtenerCAE(ctx context.Context, ventaID uuid.UUID) (*arca.Resul
 		return nil, fmt.Errorf("persistir CAE: %w", err)
 	}
 	return cae, nil
+}
+
+// hayAnteriorSinCAE indica si existe otra venta del mismo tipo, creada antes que
+// createdAt, cuya tarea de CAE sigue pendiente o en error (no cancelada, no hecha).
+func (w *Worker) hayAnteriorSinCAE(tipo models.TipoComprobante, createdAt time.Time, ventaID uuid.UUID) (bool, error) {
+	var count int64
+	err := w.db.Model(&models.TareaPendiente{}).
+		Joins("JOIN ventas ON ventas.id = tareas_pendientes.venta_id").
+		Where("tareas_pendientes.tipo = ?", models.TareaObtenerCAE).
+		Where("tareas_pendientes.estado IN ?", []models.EstadoTarea{models.TareaEstadoPendiente, models.TareaEstadoError}).
+		Where("ventas.tipo = ? AND ventas.id != ?", tipo, ventaID).
+		Where("ventas.created_at < ? OR (ventas.created_at = ? AND ventas.id < ?)", createdAt, createdAt, ventaID).
+		Count(&count).Error
+	return count > 0, err
+}
+
+// AnularCAE cancela para siempre la tarea de CAE de una venta trabada — deja de
+// reintentarla y libera el orden estricto para las ventas siguientes del mismo
+// tipo. Si es una factura, además la marca en estado ERROR.
+func (w *Worker) AnularCAE(ventaID uuid.UUID, motivo string) error {
+	err := w.db.Transaction(func(tx *gorm.DB) error {
+		var venta models.Venta
+		if err := tx.First(&venta, "id = ?", ventaID).Error; err != nil {
+			return fmt.Errorf("cargar venta: %w", err)
+		}
+		if venta.CAE != "" {
+			return fmt.Errorf("la venta ya tiene CAE, no hay nada que anular")
+		}
+		if err := tx.Model(&models.TareaPendiente{}).
+			Where("venta_id = ? AND tipo = ?", ventaID, models.TareaObtenerCAE).
+			Updates(map[string]interface{}{"estado": models.TareaEstadoCancelada, "ultimo_error": motivo}).Error; err != nil {
+			return err
+		}
+		if venta.Tipo == models.TipoFactura {
+			return tx.Model(&models.Factura{}).Where("venta_id = ?", ventaID).Update("estado", models.EstadoError).Error
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	// Destraba la cola: la siguiente venta del mismo tipo ya no tiene por qué esperar.
+	go w.procesarPendientes(context.Background())
+	return nil
+}
+
+// CorregirYReintentarFactura actualiza los datos del cliente de una factura
+// trabada (ej. CUIT mal tipeado) y reencola su tarea de CAE para reintentar ya.
+func (w *Worker) CorregirYReintentarFactura(ventaID uuid.UUID, razonSocial, cuit, email string) error {
+	err := w.db.Transaction(func(tx *gorm.DB) error {
+		var venta models.Venta
+		if err := tx.First(&venta, "id = ?", ventaID).Error; err != nil {
+			return fmt.Errorf("cargar venta: %w", err)
+		}
+		if venta.CAE != "" {
+			return fmt.Errorf("la factura ya tiene CAE")
+		}
+		if venta.Tipo != models.TipoFactura {
+			return fmt.Errorf("esta venta no es una factura")
+		}
+		if err := tx.Model(&models.Factura{}).Where("venta_id = ?", ventaID).Updates(map[string]interface{}{
+			"razon_social":  razonSocial,
+			"cuit_cliente":  cuit,
+			"email_cliente": email,
+		}).Error; err != nil {
+			return err
+		}
+		return tx.Model(&models.TareaPendiente{}).
+			Where("venta_id = ? AND tipo = ?", ventaID, models.TareaObtenerCAE).
+			Updates(map[string]interface{}{"estado": models.TareaEstadoPendiente, "intentos": 0, "ultimo_error": ""}).Error
+	})
+	if err != nil {
+		return err
+	}
+	go w.procesarPendientes(context.Background())
+	return nil
 }
 
 // imprimirTicket imprime el ticket por el puerto serie configurado (despliegue
@@ -256,27 +347,30 @@ func enviarFacturaPorEmail(db *gorm.DB, cfg *config.Config, emailCli *email.Clie
 	}
 
 	pdfBytes, err := pdf.Generar(pdf.DatosFacturaPDF{
-		NegocioNombre:  emp.RazonSocial,
-		NegocioDirec:   emp.Direccion,
-		NegocioTel:     emp.Telefono,
-		NegocioIVACond: emp.CondicionIVA,
-		CUIT:           emp.CUIT,
-		PuntoVenta:     emp.PuntoVenta,
-		Numero:         venta.NumeroFiscal,
-		Fecha:          venta.CreatedAt,
-		TipoComp:       tipoComp,
-		LetraComp:      letra,
-		RazonSocial:    factura.RazonSocial,
-		CUITCliente:    factura.CUITCliente,
-		EmailCliente:   factura.EmailCliente,
-		CondIVACliente: condIVACliente,
-		Items:          items,
-		Subtotal:       total - iva,
-		IVA:            iva,
-		Total:          total,
-		MetodoPago:     string(venta.MetodoPago),
-		CAE:            factura.CAE,
-		CAEVto:         caeVto,
+		NegocioNombre:     emp.RazonSocial,
+		NegocioDirec:      emp.Direccion,
+		NegocioTel:        emp.Telefono,
+		NegocioIVACond:    emp.CondicionIVA,
+		CUIT:              emp.CUIT,
+		PuntoVenta:        emp.PuntoVenta,
+		IngBrutos:         emp.IngBrutos,
+		InicioActividades: emp.InicioActividades,
+		Numero:            venta.NumeroFiscal,
+		Fecha:             venta.CreatedAt,
+		TipoComp:          tipoComp,
+		LetraComp:         letra,
+		RazonSocial:       factura.RazonSocial,
+		CUITCliente:       factura.CUITCliente,
+		EmailCliente:      factura.EmailCliente,
+		CondIVACliente:    condIVACliente,
+		Items:             items,
+		Subtotal:          total - iva,
+		IVA:               iva,
+		Total:             total,
+		MetodoPago:        string(venta.MetodoPago),
+		CAE:               factura.CAE,
+		CAEVto:            caeVto,
+		QRData:            venta.QRData,
 	})
 	if err != nil {
 		return fmt.Errorf("generar pdf: %w", err)
@@ -404,6 +498,11 @@ func (w *Worker) ejecutar(ctx context.Context, t models.TareaPendiente) {
 	}
 
 	if err != nil {
+		if errors.Is(err, errCAEBloqueadaPorOrden) {
+			// No es una falla — está esperando su turno. No gastar intentos ni
+			// marcar ERROR: se reintenta en el próximo poll sin penalizarla.
+			return
+		}
 		slog.Error("outbox: tarea falló", "tipo", t.Tipo, "venta_id", t.VentaID, "intento", t.Intentos+1, "err", err)
 		w.db.Model(&t).Updates(map[string]interface{}{
 			"estado":       models.TareaEstadoError,

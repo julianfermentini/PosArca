@@ -13,12 +13,14 @@ import (
 // DatosFacturaPDF agrupa todo lo necesario para generar el PDF.
 type DatosFacturaPDF struct {
 	// Emisor
-	NegocioNombre  string
-	NegocioDirec   string
-	NegocioTel     string
-	NegocioIVACond string
-	CUIT           string
-	PuntoVenta     int
+	NegocioNombre     string
+	NegocioDirec      string
+	NegocioTel        string
+	NegocioIVACond    string
+	CUIT              string
+	PuntoVenta        int
+	IngBrutos         string
+	InicioActividades string
 
 	// Comprobante
 	Numero    string // ej: "001-00000007"
@@ -46,6 +48,7 @@ type DatosFacturaPDF struct {
 	// AFIP
 	CAE    string
 	CAEVto time.Time
+	QRData string // base64 del payload JSON del QR AFIP (RG 4892/2020)
 }
 
 type ItemPDF struct {
@@ -90,6 +93,14 @@ func Generar(d DatosFacturaPDF) ([]byte, error) {
 	f.CellFormat(emisorW, 5, tr("CUIT: "+formatCUIT(d.CUIT)), "", 1, "L", false, 0, "")
 	f.SetX(lm)
 	f.CellFormat(emisorW, 5, tr("IVA: "+d.NegocioIVACond), "", 1, "L", false, 0, "")
+	if d.IngBrutos != "" {
+		f.SetX(lm)
+		f.CellFormat(emisorW, 5, tr("Ing. Brutos: "+d.IngBrutos), "", 1, "L", false, 0, "")
+	}
+	if d.InicioActividades != "" {
+		f.SetX(lm)
+		f.CellFormat(emisorW, 5, tr("Inicio Act.: "+d.InicioActividades), "", 1, "L", false, 0, "")
+	}
 
 	// Caja central: letra del comprobante (cuadro grande)
 	boxX := lm + emisorW
@@ -120,6 +131,11 @@ func Generar(d DatosFacturaPDF) ([]byte, error) {
 	f.SetX(boxX)
 	f.SetFont("Arial", "", 7)
 	f.CellFormat(boxW, 4, tr(fmt.Sprintf("Pto. Venta: %04d", d.PuntoVenta)), "", 1, "C", false, 0, "")
+
+	// ORIGINAL
+	f.SetX(boxX)
+	f.SetFont("Arial", "B", 7)
+	f.CellFormat(boxW, 4, "ORIGINAL", "", 1, "C", false, 0, "")
 
 	// Línea separadora
 	y := 48.0
@@ -233,16 +249,8 @@ func Generar(d DatosFacturaPDF) ([]byte, error) {
 	f.Line(lm, y, lm+pageW, y)
 	y += 3
 
-	// QR AFIP
-	qrURL := fmt.Sprintf(
-		"https://serviciosweb.afip.gob.ar/genericos/comprobantes/clscAdeudoComprobante.aspx?p=%s&t=%s&c=%s&f=%s&i=%s&d=%s",
-		strings.TrimPrefix(d.Numero[:3], "0"), // punto venta
-		tipoComp(d.LetraComp),
-		d.CUITCliente,
-		d.Fecha.Format("20060102"),
-		d.CUIT,
-		d.CAE,
-	)
+	// QR AFIP (RG 4892/2020): https://www.afip.gov.ar/fe/qr/?p=BASE64_JSON
+	qrURL := "https://www.afip.gov.ar/fe/qr/?p=" + d.QRData
 	qrBytes, err := qrcode.Encode(qrURL, qrcode.Medium, 256)
 	if err == nil {
 		f.RegisterImageOptionsReader("qr_afip", fpdf.ImageOptions{ImageType: "PNG"}, bytes.NewReader(qrBytes))
@@ -269,7 +277,7 @@ func Generar(d DatosFacturaPDF) ([]byte, error) {
 
 	f.SetX(textX)
 	f.SetFont("Arial", "", 7)
-	f.CellFormat(pageW-32, 4, tr("Verifique el comprobante en: serviciosweb.afip.gob.ar"), "", 1, "L", false, 0, "")
+	f.CellFormat(pageW-32, 4, "Verifique este comprobante en: www.afip.gov.ar/fe/qr", "", 1, "L", false, 0, "")
 
 	var buf bytes.Buffer
 	if err := f.Output(&buf); err != nil {
