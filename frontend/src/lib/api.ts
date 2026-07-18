@@ -125,6 +125,29 @@ export interface ProductoAPI {
   precio: number | null
 }
 
+export interface VentaPendienteCAE {
+  venta_id: string
+  tipo: 'TICKET' | 'FACTURA'
+  numero: string
+  created_at: string
+  total: number
+  intentos: number
+  estado: 'PENDIENTE' | 'ERROR'
+  ultimo_error?: string
+  razon_social?: string
+  cuit_cliente?: string
+  email_cliente?: string
+}
+
+export const pendientesCAEApi = {
+  listar: () =>
+    api.get<ApiResponse<VentaPendienteCAE[]>>('/pendientes-cae'),
+  anular: (ventaId: string, motivo?: string) =>
+    api.post<ApiResponse<null>>(`/pendientes-cae/${ventaId}/anular`, { motivo }),
+  corregir: (ventaId: string, payload: { razon_social: string; cuit_cliente: string; email_cliente: string }) =>
+    api.put<ApiResponse<null>>(`/pendientes-cae/${ventaId}/corregir`, payload),
+}
+
 export const productosApi = {
   listar: () =>
     api.get<ApiResponse<ProductoAPI[]>>('/productos'),

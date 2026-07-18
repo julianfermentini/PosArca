@@ -17,6 +17,7 @@ const (
 	TareaEstadoPendiente EstadoTarea = "PENDIENTE"
 	TareaEstadoHecha     EstadoTarea = "HECHA"
 	TareaEstadoError     EstadoTarea = "ERROR"
+	TareaEstadoCancelada EstadoTarea = "CANCELADA" // se anuló a mano; no se reintenta más
 )
 
 // TareaPendiente es un efecto secundario (imprimir ticket, mandar email) que debe

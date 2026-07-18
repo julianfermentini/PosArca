@@ -5,9 +5,10 @@ import { reportesApi, ventasApi } from '../lib/api'
 import { formatPrecio } from '../lib/utils'
 import { useEmpresaStore } from '../stores/empresaStore'
 import { usePrinterStore } from '../stores/printerStore'
+import { PendientesCAE } from '../components/features/pendientes/PendientesCAE'
 import type { ResumenCierre, Venta } from '../types'
 
-type Tab = 'historial' | 'cierre'
+type Tab = 'historial' | 'cierre' | 'pendientes'
 
 // ─── Helpers de calendario ────────────────────────────────────────────────────
 
@@ -313,11 +314,13 @@ export default function ReportePage() {
           <div>
             {/* Header del día + tabs */}
             <div style={{ marginBottom: 20 }}>
-              <h2 className="font-bold text-gray-900" style={{ fontSize: 18, margin: '0 0 4px' }}>
-                {fechaLabel}
-              </h2>
+              {tab !== 'pendientes' && (
+                <h2 className="font-bold text-gray-900" style={{ fontSize: 18, margin: '0 0 4px' }}>
+                  {fechaLabel}
+                </h2>
+              )}
               <div className="flex rounded-xl p-1" style={{ background: '#E5E7EB', gap: 4 }}>
-                {(['historial', 'cierre'] as Tab[]).map(t => (
+                {(['historial', 'cierre', 'pendientes'] as Tab[]).map(t => (
                   <button
                     key={t}
                     onClick={() => setTab(t)}
@@ -329,7 +332,7 @@ export default function ReportePage() {
                       boxShadow: tab === t ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
                     }}
                   >
-                    {t === 'historial' ? 'Historial' : 'Cierre de Caja'}
+                    {t === 'historial' ? 'Historial' : t === 'cierre' ? 'Cierre de Caja' : 'Pendientes ARCA'}
                   </button>
                 ))}
               </div>
@@ -340,7 +343,7 @@ export default function ReportePage() {
                 {error}
               </div>
             )}
-            {cargando && (
+            {cargando && tab !== 'pendientes' && (
               <div className="text-center text-gray-400 py-16">Cargando...</div>
             )}
 
@@ -531,6 +534,9 @@ export default function ReportePage() {
                 <div className="text-center text-gray-400 py-16">Sin ventas para esta fecha</div>
               )
             )}
+
+            {/* PENDIENTES ARCA TAB — no depende de la fecha seleccionada */}
+            {tab === 'pendientes' && <PendientesCAE />}
           </div>
         </div>
       </div>

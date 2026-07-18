@@ -47,6 +47,11 @@ func SetupRouter(db *gorm.DB, cfg *config.Config, worker *handlers.Worker) *gin.
 			syncH := handlers.NuevoSyncHandler(db, cfg, worker)
 			protected.POST("/sync/ventas", syncH.SincronizarVentas)
 
+			pendientes := handlers.NuevoPendientesHandler(db, worker)
+			protected.GET("/pendientes-cae", pendientes.Listar)
+			protected.POST("/pendientes-cae/:id/anular", pendientes.Anular)
+			protected.PUT("/pendientes-cae/:id/corregir", pendientes.Corregir)
+
 			empresa := handlers.NuevoEmpresaHandler(db, cfg)
 			protected.GET("/empresa", empresa.Get)
 			protected.PUT("/empresa", empresa.Update)
