@@ -49,13 +49,62 @@ type DatosFacturaPDF struct {
 	CAE    string
 	CAEVto time.Time
 	QRData string // base64 del payload JSON del QR AFIP (RG 4892/2020)
+
+	// Nota de defensa del consumidor — texto libre configurado en Empresa, vacío si no se cargó.
+	DefensaConsumidor string
 }
 
 type ItemPDF struct {
-	Descripcion  string
-	PrecioNeto   float64
+	Descripcion   string
+	PrecioNeto    float64
 	IVAPorcentaje float64
-	Total        float64
+	Total         float64 // precio neto + IVA de una unidad
+}
+
+// alicuotasAFIP son las alícuotas de IVA que ARCA exige discriminar en una
+// Factura A, en el orden en que se muestran. El sistema hoy solo factura al
+// 21%, así que el resto siempre da $0 — no es un dato inventado, es correcto
+// mostrar en cero las alícuotas que el negocio no usa.
+var alicuotasAFIP = []float64{27, 21, 10.5, 5, 2.5, 0}
+
+// grupoItem agrupa líneas de venta idénticas (misma descripción, precio y
+// alícuota) en una sola fila con cantidad — igual que hace el ticket ESC/POS
+// (printer.ts), en vez de imprimir una fila por unidad.
+type grupoItem struct {
+	descripcion   string
+	precioNeto    float64
+	ivaPorcentaje float64
+	cantidad      int
+	subtotalNeto  float64
+	totalConIVA   float64
+}
+
+func agruparItems(items []ItemPDF) []grupoItem {
+	var grupos []grupoItem
+	for _, it := range items {
+		encontrado := false
+		for i := range grupos {
+			g := &grupos[i]
+			if g.descripcion == it.Descripcion && g.precioNeto == it.PrecioNeto && g.ivaPorcentaje == it.IVAPorcentaje {
+				g.cantidad++
+				g.subtotalNeto += it.PrecioNeto
+				g.totalConIVA += it.Total
+				encontrado = true
+				break
+			}
+		}
+		if !encontrado {
+			grupos = append(grupos, grupoItem{
+				descripcion:   it.Descripcion,
+				precioNeto:    it.PrecioNeto,
+				ivaPorcentaje: it.IVAPorcentaje,
+				cantidad:      1,
+				subtotalNeto:  it.PrecioNeto,
+				totalConIVA:   it.Total,
+			})
+		}
+	}
+	return grupos
 }
 
 // Generar devuelve los bytes del PDF.
@@ -116,7 +165,7 @@ func Generar(d DatosFacturaPDF) ([]byte, error) {
 
 	f.SetFont("Arial", "", 8)
 	f.SetX(boxX)
-	f.CellFormat(boxW, 5, tr("Cod. "+tipoComp(d.LetraComp)), "", 1, "C", false, 0, "")
+	f.CellFormat(boxW, 5, "COD. "+tipoComp(d.LetraComp), "", 1, "C", false, 0, "")
 
 	// Info del comprobante (debajo del cuadro de letra)
 	f.SetFont("Arial", "", 9)
@@ -146,7 +195,7 @@ func Generar(d DatosFacturaPDF) ([]byte, error) {
 	y += 2
 	f.SetFont("Arial", "B", 9)
 	f.SetXY(lm, y)
-	f.CellFormat(20, 6, tr("Se\xf1or/es:"), "", 0, "L", false, 0, "")
+	f.CellFormat(20, 6, tr("Señor/es:"), "", 0, "L", false, 0, "")
 	f.SetFont("Arial", "", 9)
 	f.CellFormat(pageW-20, 6, tr(d.RazonSocial), "", 1, "L", false, 0, "")
 
@@ -169,80 +218,96 @@ func Generar(d DatosFacturaPDF) ([]byte, error) {
 		f.CellFormat(pageW-20, 6, d.EmailCliente, "", 1, "L", false, 0, "")
 	}
 
+	// Condición de venta: el sistema no factura a cuenta corriente — efectivo,
+	// tarjeta y billetera son todos cobro inmediato, así que "Contado" siempre
+	// es correcto (no es un valor fijo inventado, es un hecho del negocio).
+	f.SetX(lm)
+	f.SetFont("Arial", "B", 9)
+	f.CellFormat(35, 6, tr("Condición de venta:"), "", 0, "L", false, 0, "")
+	f.SetFont("Arial", "", 9)
+	f.CellFormat(pageW-35, 6, "Contado", "", 1, "L", false, 0, "")
+
 	y = f.GetY() + 2
 	f.Line(lm, y, lm+pageW, y)
 
 	// ── TABLA DE ARTÍCULOS ──────────────────────────────────────────────────
 	y += 4
 
-	// Columnas: Cant(15) | Descripción(95) | P.Unit(30) | %IVA(15) | Total(35)
-	cols := []float64{15, 95, 30, 15, 35}
-	hdrs := []string{"Cant.", "Descripci\xf3n", "Precio Unit.", "%IVA", "TOTAL"}
+	// Columnas oficiales de ARCA para el detalle de una Factura A.
+	cols := []float64{12, 50, 15, 18, 22, 15, 22, 14, 22}
+	hdrs := []string{"Cód.", "Producto/Servicio", "Cant.", "U.medida", "P.Unit.", "%Bonif", "Subtotal", "Alíc.IVA", "Subt.c/IVA"}
 
 	f.SetFillColor(230, 230, 230)
-	f.SetFont("Arial", "B", 9)
+	f.SetFont("Arial", "B", 8)
 	f.SetXY(lm, y)
 	for i, w := range cols {
-		f.CellFormat(w, 7, hdrs[i], "1", 0, "C", true, 0, "")
+		f.CellFormat(w, 7, tr(hdrs[i]), "1", 0, "C", true, 0, "")
 	}
 	f.Ln(-1)
 
-	f.SetFont("Arial", "", 9)
+	f.SetFont("Arial", "", 8)
 	f.SetFillColor(255, 255, 255)
-	for _, item := range d.Items {
+	for i, g := range agruparItems(d.Items) {
 		f.SetX(lm)
-		f.CellFormat(cols[0], 6, "1", "1", 0, "C", false, 0, "")
-		f.CellFormat(cols[1], 6, tr(item.Descripcion), "1", 0, "L", false, 0, "")
-		f.CellFormat(cols[2], 6, formatMoney(item.PrecioNeto), "1", 0, "R", false, 0, "")
-		f.CellFormat(cols[3], 6, fmt.Sprintf("%.0f", item.IVAPorcentaje), "1", 0, "C", false, 0, "")
-		f.CellFormat(cols[4], 6, formatMoney(item.Total), "1", 0, "R", false, 0, "")
+		f.CellFormat(cols[0], 6, fmt.Sprintf("%02d", i+1), "1", 0, "C", false, 0, "")
+		f.CellFormat(cols[1], 6, tr(g.descripcion), "1", 0, "L", false, 0, "")
+		f.CellFormat(cols[2], 6, fmt.Sprintf("%d", g.cantidad), "1", 0, "C", false, 0, "")
+		f.CellFormat(cols[3], 6, "unidades", "1", 0, "C", false, 0, "")
+		f.CellFormat(cols[4], 6, formatNum(g.precioNeto), "1", 0, "R", false, 0, "")
+		f.CellFormat(cols[5], 6, "0,00", "1", 0, "C", false, 0, "")
+		f.CellFormat(cols[6], 6, formatNum(g.subtotalNeto), "1", 0, "R", false, 0, "")
+		f.CellFormat(cols[7], 6, fmt.Sprintf("%s%%", formatPorcentaje(g.ivaPorcentaje)), "1", 0, "C", false, 0, "")
+		f.CellFormat(cols[8], 6, formatNum(g.totalConIVA), "1", 0, "R", false, 0, "")
 		f.Ln(-1)
 	}
 
-	// Fila subtotal
-	f.SetFont("Arial", "B", 9)
-	f.SetX(lm)
-	subtotalLabelW := cols[0] + cols[1] + cols[2] + cols[3]
-	f.CellFormat(subtotalLabelW, 6, "SUBTOTAL", "1", 0, "R", false, 0, "")
-	f.CellFormat(cols[4], 6, formatMoney(d.Subtotal+d.IVA), "1", 0, "R", false, 0, "")
-	f.Ln(-1)
-
-	// ── PAGO ────────────────────────────────────────────────────────────────
-	y = f.GetY() + 4
+	// Forma de pago — no exigido por ARCA en este bloque, pero útil para el
+	// cliente; el detalle oficial de impuestos va en el bloque de totales.
+	y = f.GetY() + 3
 	f.SetXY(lm, y)
 	f.SetFont("Arial", "B", 9)
-	f.CellFormat(pageW, 6, "Pagos", "B", 1, "L", false, 0, "")
-
-	f.SetX(lm)
-	f.SetFont("Arial", "B", 9)
-	f.CellFormat(pageW-35, 6, tr("Medio de Pago"), "1", 0, "L", false, 0, "")
-	f.CellFormat(35, 6, "Monto", "1", 0, "R", false, 0, "")
-	f.Ln(-1)
-
-	f.SetX(lm)
+	f.CellFormat(35, 6, "Forma de pago:", "", 0, "L", false, 0, "")
 	f.SetFont("Arial", "", 9)
-	f.CellFormat(pageW-35, 6, tr(metodoPagoLabel(d.MetodoPago)), "1", 0, "L", false, 0, "")
-	f.CellFormat(35, 6, formatMoney(d.Total), "1", 0, "R", false, 0, "")
-	f.Ln(-1)
+	f.CellFormat(pageW-35, 6, tr(metodoPagoLabel(d.MetodoPago)), "", 1, "L", false, 0, "")
 
-	f.SetX(lm)
-	f.SetFont("Arial", "B", 9)
-	f.CellFormat(pageW-35, 6, "TOTAL", "1", 0, "R", false, 0, "")
-	f.CellFormat(35, 6, formatMoney(d.Total), "1", 0, "R", false, 0, "")
-	f.Ln(-1)
+	// ── TOTALES (formato ARCA: desglose de IVA por alícuota) ───────────
+	ivaPorAlicuota := map[float64]float64{}
+	for _, it := range d.Items {
+		ivaPorAlicuota[it.IVAPorcentaje] += it.Total - it.PrecioNeto
+	}
+
+	y = f.GetY() + 4
+	totalLabelW := pageW - 40
+	renglon := func(label string, valor float64, negrita bool) {
+		f.SetX(lm)
+		if negrita {
+			f.SetFont("Arial", "B", 9)
+		} else {
+			f.SetFont("Arial", "", 9)
+		}
+		f.CellFormat(totalLabelW, 6, tr(label), "", 0, "R", false, 0, "")
+		f.CellFormat(40, 6, formatMoney(valor), "", 1, "R", false, 0, "")
+	}
+
+	f.SetXY(lm, y)
+	renglon("Importe Neto Gravado:", d.Subtotal, false)
+	for _, alic := range alicuotasAFIP {
+		renglon(fmt.Sprintf("IVA %s%%:", formatPorcentaje(alic)), ivaPorAlicuota[alic], false)
+	}
+	renglon("Importe Otros Tributos:", 0, false)
+	renglon("Importe Total:", d.Total, true)
 
 	// ── RÉGIMEN DE TRANSPARENCIA FISCAL (LEY 27.743) ────────────────────────
 	y = f.GetY() + 4
 	f.SetXY(lm, y)
-	f.SetFont("Arial", "B", 9)
-	f.CellFormat(pageW, 6, tr("R\xe9gimen de Transparencia Fiscal al Consumidor (LEY 27.743)"), "B", 1, "L", false, 0, "")
+	f.SetFont("Arial", "B", 8)
+	f.CellFormat(pageW, 5, tr("Régimen de Transparencia Fiscal al Consumidor (Ley 27.743) — IVA Contenido: "+formatMoney(d.IVA)), "T", 1, "L", false, 0, "")
 
-	f.SetX(lm)
-	f.SetFont("Arial", "", 9)
-	f.CellFormat(pageW-35, 6, "IVA Contenido", "0", 0, "L", false, 0, "")
-	f.SetFont("Arial", "B", 9)
-	f.CellFormat(35, 6, formatMoney(d.IVA), "0", 0, "R", false, 0, "")
-	f.Ln(-1)
+	if d.DefensaConsumidor != "" {
+		f.SetX(lm)
+		f.SetFont("Arial", "", 7)
+		f.CellFormat(pageW, 4, tr(d.DefensaConsumidor), "", 1, "L", false, 0, "")
+	}
 
 	// ── CAE ─────────────────────────────────────────────────────────────────
 	y = f.GetY() + 6
@@ -313,6 +378,15 @@ func formatNum(v float64) string {
 	return out
 }
 
+// formatPorcentaje muestra "21" en vez de "21.00" pero conserva "10.5" para
+// la alícuota reducida (10.5%, que no es entera).
+func formatPorcentaje(v float64) string {
+	if v == float64(int64(v)) {
+		return fmt.Sprintf("%d", int64(v))
+	}
+	return strings.Replace(fmt.Sprintf("%g", v), ".", ",", 1)
+}
+
 func formatCUIT(cuit string) string {
 	clean := strings.Map(func(r rune) rune {
 		if r >= '0' && r <= '9' {
@@ -326,14 +400,16 @@ func formatCUIT(cuit string) string {
 	return cuit
 }
 
+// tipoComp devuelve el código de comprobante AFIP con el cero relleno oficial
+// (ej. "01" para Factura A, "06" para Factura B).
 func tipoComp(letra string) string {
 	switch letra {
 	case "A":
-		return "1"
+		return "01"
 	case "B":
-		return "6"
+		return "06"
 	default:
-		return "6"
+		return "06"
 	}
 }
 

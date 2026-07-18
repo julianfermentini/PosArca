@@ -309,6 +309,7 @@ func enviarFacturaPorEmail(db *gorm.DB, cfg *config.Config, emailCli *email.Clie
 		MetodoPago:        string(venta.MetodoPago),
 		CAE:               factura.CAE,
 		CAEVto:            caeVto,
+		DefensaConsumidor: emp.DefensaConsumidor,
 		QRData:            venta.QRData,
 	})
 	if err != nil {
