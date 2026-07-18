@@ -3,11 +3,14 @@ export type MetodoPago = 'EFECTIVO' | 'TARJETA' | 'BILLETERA'
 export type EstadoFactura = 'PENDIENTE' | 'AUTORIZADO' | 'ERROR'
 export type EstadoSync = 'PENDIENTE' | 'PROCESANDO' | 'SINCRONIZADO' | 'ERROR'
 
-// Ítem normalizado — una fila en venta_items
+// Ítem normalizado — una fila en venta_items.
+// precio_neto es POR UNIDAD; iva y total son de la LÍNEA (unidad × cantidad).
 export interface VentaItem {
   id: string
   venta_id: string
   descripcion: string
+  // Opcional porque las filas guardadas antes de esta columna no la traen (vale 1)
+  cantidad?: number
   precio_neto: number
   iva: number
   total: number
@@ -45,11 +48,12 @@ export interface Factura {
   venta?: Venta
 }
 
-// Lo que el frontend envía al backend — solo descripción y precio neto
-// El backend calcula IVA y total
+// Lo que el frontend envía al backend — descripción, precio neto unitario y
+// cantidad. El backend calcula IVA y total.
 export interface ItemRequest {
   descripcion: string
   precio_neto: number
+  cantidad: number
 }
 
 export interface VentaOffline {

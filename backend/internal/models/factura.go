@@ -16,7 +16,10 @@ const (
 
 type Factura struct {
 	ID             uuid.UUID     `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
-	VentaID        uuid.UUID     `gorm:"type:uuid;not null" json:"venta_id"`
+	// uniqueIndex: la relación con ventas es 1:1 — dos facturas para la misma
+	// venta serían un bug (doble CAE/doble email); el índice además acelera los
+	// First(&factura, "venta_id = ?") del worker y los pendientes.
+	VentaID        uuid.UUID     `gorm:"type:uuid;not null;uniqueIndex:idx_facturas_venta_id" json:"venta_id"`
 	Venta          Venta         `gorm:"foreignKey:VentaID" json:"-"`
 	RazonSocial  string        `gorm:"column:razon_social;not null" json:"razon_social"`
 	CUITCliente  string        `gorm:"column:cuit_cliente;not null" json:"cuit_cliente"`

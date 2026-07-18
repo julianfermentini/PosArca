@@ -56,9 +56,10 @@ type DatosFacturaPDF struct {
 
 type ItemPDF struct {
 	Descripcion   string
-	PrecioNeto    float64
+	PrecioNeto    float64 // neto por unidad
 	IVAPorcentaje float64
-	Total         float64 // precio neto + IVA de una unidad
+	Cantidad      int     // 0 vale como 1 (líneas anteriores a la columna cantidad)
+	Total         float64 // neto + IVA de la línea completa (unidad × cantidad)
 }
 
 // alicuotasAFIP son las alícuotas de IVA que ARCA exige discriminar en una
@@ -82,12 +83,16 @@ type grupoItem struct {
 func agruparItems(items []ItemPDF) []grupoItem {
 	var grupos []grupoItem
 	for _, it := range items {
+		cantidad := it.Cantidad
+		if cantidad < 1 {
+			cantidad = 1
+		}
 		encontrado := false
 		for i := range grupos {
 			g := &grupos[i]
 			if g.descripcion == it.Descripcion && g.precioNeto == it.PrecioNeto && g.ivaPorcentaje == it.IVAPorcentaje {
-				g.cantidad++
-				g.subtotalNeto += it.PrecioNeto
+				g.cantidad += cantidad
+				g.subtotalNeto += it.PrecioNeto * float64(cantidad)
 				g.totalConIVA += it.Total
 				encontrado = true
 				break
@@ -98,8 +103,8 @@ func agruparItems(items []ItemPDF) []grupoItem {
 				descripcion:   it.Descripcion,
 				precioNeto:    it.PrecioNeto,
 				ivaPorcentaje: it.IVAPorcentaje,
-				cantidad:      1,
-				subtotalNeto:  it.PrecioNeto,
+				cantidad:      cantidad,
+				subtotalNeto:  it.PrecioNeto * float64(cantidad),
 				totalConIVA:   it.Total,
 			})
 		}
@@ -273,7 +278,11 @@ func Generar(d DatosFacturaPDF) ([]byte, error) {
 	// ── TOTALES (formato ARCA: desglose de IVA por alícuota) ───────────
 	ivaPorAlicuota := map[float64]float64{}
 	for _, it := range d.Items {
-		ivaPorAlicuota[it.IVAPorcentaje] += it.Total - it.PrecioNeto
+		cantidad := it.Cantidad
+		if cantidad < 1 {
+			cantidad = 1
+		}
+		ivaPorAlicuota[it.IVAPorcentaje] += it.Total - it.PrecioNeto*float64(cantidad)
 	}
 
 	y = f.GetY() + 4

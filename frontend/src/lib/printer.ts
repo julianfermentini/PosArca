@@ -83,7 +83,8 @@ export interface DatosTicketFront {
   puntoVenta:         number
   tipoCmp:            string
   numero:             string
-  items:              Array<{ descripcion: string; precioNeto: number; total: number }>
+  // total es POR UNIDAD; cantidad ausente vale 1
+  items:              Array<{ descripcion: string; precioNeto: number; total: number; cantidad?: number }>
   subtotal:           number
   iva:                number
   total:              number
@@ -126,13 +127,16 @@ export function buildTicketBytes(d: DatosTicketFront): Uint8Array {
   const pvStr = (parts[0] ?? '').padStart(5, '0')
   const nStr  = (parts[1] ?? '').padStart(8, '0')
 
-  // Agrupar items idénticos para mostrar cantidad en el ticket
+  // Agrupar items idénticos para mostrar cantidad en el ticket. Los ítems ya
+  // pueden venir con cantidad propia (carrito/BD); los payloads viejos de una
+  // fila por unidad se siguen agrupando contando repeticiones.
   type Grupo = { descripcion: string; totalUnit: number; qty: number; totalLinea: number }
   const grupos: Grupo[] = []
   for (const it of d.items) {
+    const qty = it.cantidad && it.cantidad > 0 ? it.cantidad : 1
     const g = grupos.find(x => x.descripcion === it.descripcion && Math.abs(x.totalUnit - it.total) < 0.01)
-    if (g) { g.qty++; g.totalLinea += it.total }
-    else grupos.push({ descripcion: it.descripcion, totalUnit: it.total, qty: 1, totalLinea: it.total })
+    if (g) { g.qty += qty; g.totalLinea += it.total * qty }
+    else grupos.push({ descripcion: it.descripcion, totalUnit: it.total, qty, totalLinea: it.total * qty })
   }
 
   enc.init()
@@ -208,7 +212,8 @@ export interface DatosTicketNoFiscal {
   direccion?:         string
   defensaConsumidor?: string
   condicionIVA?:      string
-  items:              Array<{ descripcion: string; precioNeto: number; total: number }>
+  // total es POR UNIDAD; cantidad ausente vale 1
+  items:              Array<{ descripcion: string; precioNeto: number; total: number; cantidad?: number }>
   subtotal:           number
   iva:                number
   total:              number
@@ -260,9 +265,15 @@ export function buildTicketNoFiscalBytes(d: DatosTicketNoFiscal): Uint8Array {
   enc.left().line(`Fecha: ${fechaHoraStr}`)
   enc.sep(W)
 
-  // Items
+  // Items — con cantidad se usa el mismo formato de dos líneas del ticket fiscal
   for (const it of d.items) {
-    enc.itemLine(it.descripcion, '  (21)  ', $(it.total), W)
+    const qty = it.cantidad && it.cantidad > 0 ? it.cantidad : 1
+    if (qty > 1) {
+      enc.line(`${qty} x  ${$(it.total)}`)
+      enc.twoCol(it.descripcion.slice(0, W - 9), $(it.total * qty), W)
+    } else {
+      enc.itemLine(it.descripcion, '  (21)  ', $(it.total), W)
+    }
   }
 
   enc.sep(W)

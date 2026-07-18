@@ -229,9 +229,12 @@ export default function ReportePage() {
       defensaConsumidor: empresa?.defensa_consumidor ?? '',
       condicionIVA:      empresa?.condicion_iva ?? '',
     }
-    const itemsData = v.items.map(it => ({
-      descripcion: it.descripcion, precioNeto: it.precio_neto, total: it.total,
-    }))
+    // it.total viene de la BD como total de LÍNEA; la impresora espera el total
+    // por unidad + cantidad, así que se divide (filas viejas: cantidad 1, no cambia).
+    const itemsData = v.items.map(it => {
+      const qty = it.cantidad && it.cantidad > 0 ? it.cantidad : 1
+      return { descripcion: it.descripcion, precioNeto: it.precio_neto, total: it.total / qty, cantidad: qty }
+    })
 
     if (v.cae) {
       await printer.imprimir({
@@ -395,7 +398,7 @@ export default function ReportePage() {
                             <div className="border-t border-gray-50 flex flex-col" style={{ padding: '12px 18px 16px', gap: 6 }}>
                               {v.items.map(item => (
                                 <div key={item.id} className="flex justify-between text-sm text-gray-500" style={{ paddingLeft: 98 }}>
-                                  <span>{item.descripcion}</span>
+                                  <span>{(item.cantidad ?? 1) > 1 ? `${item.cantidad}× ` : ''}{item.descripcion}</span>
                                   <span className="font-mono font-semibold text-gray-700">{formatPrecio(item.total)}</span>
                                 </div>
                               ))}

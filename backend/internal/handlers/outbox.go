@@ -276,6 +276,7 @@ func enviarFacturaPorEmail(db *gorm.DB, cfg *config.Config, emailCli *email.Clie
 			Descripcion:   it.Descripcion,
 			PrecioNeto:    it.PrecioNeto,
 			IVAPorcentaje: 21,
+			Cantidad:      it.Cantidad,
 			Total:         it.Total,
 		}
 	}
@@ -391,6 +392,16 @@ func (w *Worker) procesarPendientes(ctx context.Context) {
 			continue
 		}
 		w.ejecutar(ctx, t)
+	}
+
+	// Limpieza: una tarea HECHA es solo un registro de que el efecto ya ocurrió;
+	// pasados 30 días no la mira nadie y sin esto la tabla crece para siempre
+	// (1–2 filas por venta). Las CANCELADA se conservan: son el único registro
+	// de una anulación manual y de su motivo.
+	if err := w.db.WithContext(ctx).
+		Where("estado = ? AND updated_at < ?", models.TareaEstadoHecha, time.Now().AddDate(0, 0, -30)).
+		Delete(&models.TareaPendiente{}).Error; err != nil {
+		slog.Warn("outbox: limpiar tareas hechas viejas", "err", err)
 	}
 }
 

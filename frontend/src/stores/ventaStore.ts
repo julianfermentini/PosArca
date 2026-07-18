@@ -102,12 +102,11 @@ export const useVentaStore = create<VentaState>((set, get) => ({
 
   getTotal: () => calcularTotal(get().getSubtotal()),
 
-  // Expandir por cantidad — el backend recibe una fila por unidad
+  // Una línea por producto, con cantidad — el backend guarda una fila por línea
   getItemsParaAPI: () =>
-    get().carrito.flatMap(item =>
-      Array.from({ length: item.cantidad }, () => ({
-        descripcion: item.descripcion,
-        precio_neto: item.precio_neto,
-      }))
-    ),
+    get().carrito.map(item => ({
+      descripcion: item.descripcion,
+      precio_neto: item.precio_neto,
+      cantidad: item.cantidad,
+    })),
 }))

@@ -60,6 +60,24 @@ func migrar(db *gorm.DB) error {
 	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_comprobante_contadores_tipo_pv ON comprobante_contadores (tipo, punto_venta)`).Error; err != nil {
 		slog.Error("no se pudo crear índice único de comprobante_contadores", "err", err)
 	}
+	// facturas↔ventas es 1:1: el índice único evita doble factura por venta y
+	// acelera los First("venta_id = ?") del worker, pendientes y email.
+	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_facturas_venta_id ON facturas (venta_id)`).Error; err != nil {
+		slog.Error("no se pudo crear índice único de facturas.venta_id", "err", err)
+	}
+
+	// FK real de tareas_pendientes hacia ventas (GORM no la crea porque el modelo
+	// no declara la asociación). ADD CONSTRAINT no soporta IF NOT EXISTS, de ahí
+	// el bloque DO con chequeo previo.
+	if err := db.Exec(`DO $$ BEGIN
+		IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_tareas_pendientes_venta') THEN
+			ALTER TABLE tareas_pendientes
+				ADD CONSTRAINT fk_tareas_pendientes_venta
+				FOREIGN KEY (venta_id) REFERENCES ventas(id) ON DELETE CASCADE;
+		END IF;
+	END $$`).Error; err != nil {
+		slog.Error("no se pudo crear FK de tareas_pendientes.venta_id", "err", err)
+	}
 
 	return nil
 }
