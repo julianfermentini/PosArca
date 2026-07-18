@@ -25,8 +25,6 @@ type Config struct {
 	NegocioDirec   string
 	NegocioTel     string
 	NegocioIVACond string
-	PrinterPort    string
-	PrinterBaud    int
 	Port           string
 	JWTSecret      string
 	CORSOrigins    []string
@@ -37,7 +35,6 @@ func Load() *Config {
 		slog.Info("sin archivo .env, usando variables de entorno del sistema")
 	}
 
-	printerBaud, _ := strconv.Atoi(getEnv("PRINTER_BAUD", "9600"))
 	puntoVenta, _ := strconv.Atoi(getEnv("ARCA_PUNTO_VENTA", "1"))
 
 	return &Config{
@@ -56,12 +53,6 @@ func Load() *Config {
 		NegocioDirec:   getEnv("NEGOCIO_DIRECCION", ""),
 		NegocioTel:     getEnv("NEGOCIO_TEL", ""),
 		NegocioIVACond: getEnv("NEGOCIO_IVA_COND", "Responsable Inscripto"),
-		// Sin default: un puerto serie que no existe (ej. en un contenedor en la nube
-		// sin impresora física) hace que EstaConfigurada() crea que sí hay impresora
-		// y reintente imprimir en cada venta sin sentido. Vacío = sin impresora serie
-		// (el despliegue Linux/Raspberry Pi lo setea explícito a /dev/ttyUSB0).
-		PrinterPort:    getEnv("PRINTER_PORT", ""),
-		PrinterBaud:    printerBaud,
 		Port:           getEnv("PORT", "8080"),
 		JWTSecret:      mustGetEnvFailFast("JWT_SECRET"),
 		CORSOrigins:    parseOrigins(getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:5173")),

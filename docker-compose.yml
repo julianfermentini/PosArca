@@ -28,14 +28,6 @@ services:
     volumes:
       # Montar certs en desarrollo local — NUNCA en repo
       - ./certs:/app/certs:ro
-    # ── Impresora térmica (solo Linux/Raspberry Pi) ──────────────────────────
-    # Descomentar cuando el backend corre en Linux con la impresora conectada.
-    # El nombre del dispositivo puede variar: /dev/ttyUSB0, /dev/usb/lp0, etc.
-    # En el host Linux también hay que agregar el usuario al grupo dialout:
-    #   sudo usermod -aG dialout $USER
-    #
-    # devices:
-    #   - /dev/ttyUSB0:/dev/ttyUSB0
     depends_on:
       postgres:
         condition: service_healthy

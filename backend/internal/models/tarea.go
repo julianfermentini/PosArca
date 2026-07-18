@@ -11,7 +11,6 @@ type EstadoTarea string
 
 const (
 	TareaObtenerCAE   TipoTarea = "OBTENER_CAE"
-	TareaImprimir     TipoTarea = "IMPRIMIR"
 	TareaEmailFactura TipoTarea = "EMAIL_FACTURA"
 
 	TareaEstadoPendiente EstadoTarea = "PENDIENTE"
@@ -20,7 +19,7 @@ const (
 	TareaEstadoCancelada EstadoTarea = "CANCELADA" // se anuló a mano; no se reintenta más
 )
 
-// TareaPendiente es un efecto secundario (imprimir ticket, mandar email) que debe
+// TareaPendiente es un efecto secundario (obtener CAE, mandar email) que debe
 // sobrevivir a un reinicio del proceso a mitad de camino. Se crea en la misma
 // transacción que la venta/factura, así nunca existe una sin su tarea asociada.
 type TareaPendiente struct {

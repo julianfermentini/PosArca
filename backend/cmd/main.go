@@ -15,7 +15,6 @@ import (
 	"pos-fiscal/internal/db"
 	"pos-fiscal/internal/email"
 	"pos-fiscal/internal/handlers"
-	"pos-fiscal/internal/impresora"
 )
 
 func main() {
@@ -41,9 +40,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	imp := impresora.Nueva(cfg.PrinterPort, cfg.PrinterBaud)
-	defer imp.Cerrar()
-
 	emailCli := email.NuevoCliente(email.Config{
 		ResendAPIKey: cfg.ResendAPIKey,
 		FromEmail:    cfg.ResendFromEmail,
@@ -52,7 +48,7 @@ func main() {
 
 	workerCtx, cancelWorker := context.WithCancel(context.Background())
 	defer cancelWorker()
-	worker := handlers.NuevoWorker(database, cfg, imp, emailCli)
+	worker := handlers.NuevoWorker(database, cfg, emailCli)
 	go worker.Iniciar(workerCtx, 5*time.Second)
 
 	router := api.SetupRouter(database, cfg, worker)

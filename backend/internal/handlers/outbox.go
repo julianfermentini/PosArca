@@ -14,13 +14,12 @@ import (
 	"pos-fiscal/config"
 	"pos-fiscal/internal/arca"
 	"pos-fiscal/internal/email"
-	"pos-fiscal/internal/impresora"
 	"pos-fiscal/internal/models"
 	"pos-fiscal/internal/pdf"
 )
 
 const (
-	maxIntentosTarea = 5                // imprimir/email: tras 5 fallos se deja la tarea en ERROR
+	maxIntentosTarea = 5                // email: tras 5 fallos se deja la tarea en ERROR
 	maxIntentosCAE   = 288              // obtener CAE: ~24h reintentando cada ~5min si ARCA está caído
 	timeoutCAE       = 12 * time.Second // techo por intento de CAE: acota cuánto se retiene caeMu si ARCA cuelga
 )
@@ -71,8 +70,8 @@ func solicitarCAE(ctx context.Context, db *gorm.DB, cfg *config.Config, iva, tot
 }
 
 // obtenerCAE consigue el CAE de una venta ya persistida y, si lo logra, guarda
-// CAE/QR, autoriza la factura (si la venta es una factura) y encola la impresión
-// (+ email para facturas). Es idempotente: si la venta ya tiene CAE, no re-solicita
+// CAE/QR, autoriza la factura (si la venta es una factura) y encola el email
+// (para facturas). Es idempotente: si la venta ya tiene CAE, no re-solicita
 // ni re-encola. Devuelve el CAE para que el handler pueda responder al toque.
 //
 // La usan tanto el intento sincrónico al crear la venta como el worker al reintentar:
@@ -155,9 +154,6 @@ func (w *Worker) obtenerCAE(ctx context.Context, ventaID uuid.UUID) (*arca.Resul
 			}).Error; err != nil {
 				return err
 			}
-		}
-		if err := encolarTarea(tx, ventaID, models.TareaImprimir); err != nil {
-			return err
 		}
 		if esFactura {
 			if err := encolarTarea(tx, ventaID, models.TareaEmailFactura); err != nil {
@@ -246,63 +242,6 @@ func (w *Worker) CorregirYReintentarFactura(ventaID uuid.UUID, razonSocial, cuit
 	}
 	go w.procesarPendientes(context.Background())
 	return nil
-}
-
-// imprimirTicket imprime el ticket por el puerto serie configurado (despliegue
-// Linux/Raspberry Pi). En el resto de los despliegues la impresión la maneja el
-// frontend vía WebUSB/Bluetooth, así que esto es un no-op.
-func imprimirTicket(db *gorm.DB, cfg *config.Config, imp *impresora.Impresora, venta models.Venta) error {
-	if !imp.EstaConfigurada() {
-		return nil
-	}
-
-	ticketItems := make([]impresora.ItemTicket, len(venta.Items))
-	for i, it := range venta.Items {
-		ticketItems[i] = impresora.ItemTicket{
-			Descripcion: it.Descripcion,
-			PrecioNeto:  it.PrecioNeto,
-			Total:       it.Total,
-		}
-	}
-
-	subtotal, iva, total := models.TotalesDeItems(venta.Items)
-	emp := getEmpresaConf(db, cfg)
-
-	var caeVto time.Time
-	if venta.CAEVto != nil {
-		caeVto = *venta.CAEVto
-	}
-
-	datos := impresora.DatosTicket{
-		RazonSocial: emp.RazonSocial,
-		CUIT:        cfg.ArcaCUIT,
-		PuntoVenta:  cfg.ArcaPuntoVenta,
-		TipoCmp:     string(venta.Tipo),
-		Numero:      venta.NumeroFiscal,
-		Fecha:       venta.CreatedAt,
-		Items:       ticketItems,
-		Subtotal:    subtotal,
-		IVA:         iva,
-		Total:       total,
-		MetodoPago:  string(venta.MetodoPago),
-		CAE:         venta.CAE,
-		CAEVto:      caeVto,
-		QRBase64:    venta.QRData,
-	}
-
-	escpos, err := impresora.GenerarESCPOS(datos)
-	if err != nil {
-		return fmt.Errorf("generar ESC/POS: %w", err)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	if err := imp.Imprimir(ctx, escpos); err != nil {
-		return fmt.Errorf("imprimir ticket: %w", err)
-	}
-
-	return db.Model(&venta).Update("impreso", true).Error
 }
 
 // enviarFacturaPorEmail genera el PDF de la factura y lo manda por email. Carga
@@ -395,20 +334,19 @@ func enviarFacturaPorEmail(db *gorm.DB, cfg *config.Config, emailCli *email.Clie
 	return db.Model(&factura).Update("email_enviado", true).Error
 }
 
-// Worker procesa las tareas pendientes (imprimir, email) en background, con
+// Worker procesa las tareas pendientes (CAE, email) en background, con
 // reintentos, para que un reinicio a mitad de camino no pierda un efecto
 // secundario silenciosamente.
 type Worker struct {
 	db       *gorm.DB
 	cfg      *config.Config
-	imp      *impresora.Impresora
 	emailCli *email.Cliente
 	caeMu    sync.Mutex // serializa las solicitudes de CAE (evita doble CAE / carreras de numeración AFIP)
-	sweepMu  sync.Mutex // coalesce de barridos concurrentes (evita doble impresión/email)
+	sweepMu  sync.Mutex // coalesce de barridos concurrentes (evita procesar la misma tarea dos veces)
 }
 
-func NuevoWorker(db *gorm.DB, cfg *config.Config, imp *impresora.Impresora, emailCli *email.Cliente) *Worker {
-	return &Worker{db: db, cfg: cfg, imp: imp, emailCli: emailCli}
+func NuevoWorker(db *gorm.DB, cfg *config.Config, emailCli *email.Cliente) *Worker {
+	return &Worker{db: db, cfg: cfg, emailCli: emailCli}
 }
 
 // Iniciar corre el worker hasta que ctx se cancele. La primera pasada ocurre de
@@ -466,7 +404,7 @@ func maxIntentos(tipo models.TipoTarea) int {
 }
 
 // tareaLista aplica backoff exponencial (cap 5min) desde el último intento, para
-// no martillar a ARCA/impresora en cada poll cuando una tarea viene fallando.
+// no martillar a ARCA en cada poll cuando una tarea viene fallando.
 func tareaLista(t models.TareaPendiente) bool {
 	return time.Since(t.UpdatedAt) >= backoff(t.Intentos)
 }
@@ -489,8 +427,6 @@ func (w *Worker) ejecutar(ctx context.Context, t models.TareaPendiente) {
 	switch t.Tipo {
 	case models.TareaObtenerCAE:
 		_, err = w.obtenerCAE(ctx, t.VentaID)
-	case models.TareaImprimir:
-		err = w.ejecutarImprimir(t.VentaID)
 	case models.TareaEmailFactura:
 		err = enviarFacturaPorEmail(w.db, w.cfg, w.emailCli, t.VentaID)
 	default:
@@ -513,14 +449,4 @@ func (w *Worker) ejecutar(ctx context.Context, t models.TareaPendiente) {
 	}
 
 	w.db.Model(&t).Update("estado", models.TareaEstadoHecha)
-}
-
-func (w *Worker) ejecutarImprimir(ventaID uuid.UUID) error {
-	var venta models.Venta
-	if err := w.db.Preload("Items", func(d *gorm.DB) *gorm.DB {
-		return d.Order("orden ASC")
-	}).First(&venta, "id = ?", ventaID).Error; err != nil {
-		return fmt.Errorf("cargar venta: %w", err)
-	}
-	return imprimirTicket(w.db, w.cfg, w.imp, venta)
 }

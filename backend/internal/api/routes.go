@@ -9,8 +9,8 @@ import (
 	"pos-fiscal/internal/middleware"
 )
 
-// SetupRouter arma las rutas. El worker ya encapsula la impresora y el cliente de
-// email, así que los handlers solo dependen de él para los efectos secundarios.
+// SetupRouter arma las rutas. El worker ya encapsula el cliente de email, así
+// que los handlers solo dependen de él para los efectos secundarios.
 func SetupRouter(db *gorm.DB, cfg *config.Config, worker *handlers.Worker) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Logger(), gin.Recovery())
