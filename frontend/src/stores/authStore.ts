@@ -17,7 +17,11 @@ export const useAuthStore = create<AuthState>()(
       email: null,
       negocioNombre: null,
       setAuth: (token, email, negocioNombre) => set({ token, email, negocioNombre }),
-      logout: () => set({ token: null, email: null, negocioNombre: null }),
+      logout: () => {
+        localStorage.removeItem('pos-productos')
+        localStorage.removeItem('pos-empresa')
+        set({ token: null, email: null, negocioNombre: null })
+      },
       isAuthenticated: () => !!get().token,
     }),
     { name: 'pos-auth' }
