@@ -21,21 +21,25 @@ api.interceptors.request.use((config) => {
 export const authApi = {
   login: (email: string, password: string) =>
     api.post<ApiResponse<{ token: string; email: string; negocio_nombre: string }>>('/auth/login', { email, password }),
-  register: (email: string, password: string, negocio_nombre: string) =>
-    api.post<ApiResponse<{ token: string; email: string; negocio_nombre: string }>>('/auth/register', { email, password, negocio_nombre }),
+  register: (email: string, password: string, negocio_nombre: string, invite_code: string) =>
+    api.post<ApiResponse<{ token: string; email: string; negocio_nombre: string }>>('/auth/register', { email, password, negocio_nombre, invite_code }),
   status: () =>
-    api.get<ApiResponse<{ has_users: boolean }>>('/auth/status'),
+    api.get<ApiResponse<{ has_users: boolean; invite_enabled: boolean }>>('/auth/status'),
 }
 
 export interface CrearVentaPayload {
   tipo: 'TICKET'
   items: ItemRequest[]
-  metodo_pago: 'EFECTIVO' | 'TARJETA' | 'BILLETERA'
+  monto_efectivo:  number
+  monto_tarjeta:   number
+  monto_billetera: number
 }
 
 export interface CrearFacturaPayload {
   items: ItemRequest[]
-  metodo_pago: 'EFECTIVO' | 'TARJETA' | 'BILLETERA'
+  monto_efectivo:  number
+  monto_tarjeta:   number
+  monto_billetera: number
   razon_social: string
   cuit_cliente: string
   email_cliente: string
@@ -157,6 +161,25 @@ export const productosApi = {
     api.put<ApiResponse<ProductoAPI>>(`/productos/${id}`, { nombre, precio }),
   eliminar: (id: string) =>
     api.delete<ApiResponse<null>>(`/productos/${id}`),
+}
+
+export interface CuentaAdmin {
+  id: string
+  razon_social: string
+  cuit: string
+  email: string
+  punto_venta: number
+  arca_env: string
+  created_at: string
+}
+
+export const adminApi = {
+  listarCuentas: (secret: string) =>
+    api.get<ApiResponse<CuentaAdmin[]>>('/admin/cuentas', { headers: { 'X-Admin-Secret': secret } }),
+  crearCuenta: (secret: string, email: string, password: string, negocio_nombre: string) =>
+    api.post<ApiResponse<{ email: string; negocio_nombre: string }>>('/admin/crear-cuenta', { email, password, negocio_nombre }, { headers: { 'X-Admin-Secret': secret } }),
+  resetPassword: (secret: string, email: string, new_password: string) =>
+    api.post<ApiResponse<null>>('/admin/reset-password', { email, new_password }, { headers: { 'X-Admin-Secret': secret } }),
 }
 
 export default api

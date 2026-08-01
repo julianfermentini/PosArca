@@ -34,12 +34,12 @@ type ventaPendienteCAE struct {
 	EmailCliente string                 `json:"email_cliente,omitempty"`
 }
 
-// Listar maneja GET /api/pendientes-cae — ventas/facturas que todavía no
-// consiguieron CAE: esperando a ARCA, esperando su turno (orden estricto), o
-// trabadas de verdad y necesitando que alguien las anule o corrija.
+// Listar maneja GET /api/pendientes-cae
 func (h *PendientesHandler) Listar(c *gin.Context) {
+	empresaID := getEmpresaID(c)
+
 	var tareas []models.TareaPendiente
-	if err := h.db.Where("tipo = ? AND estado IN ?", models.TareaObtenerCAE,
+	if err := h.db.Where("empresa_id = ? AND tipo = ? AND estado IN ?", empresaID, models.TareaObtenerCAE,
 		[]models.EstadoTarea{models.TareaEstadoPendiente, models.TareaEstadoError}).
 		Order("created_at ASC").
 		Find(&tareas).Error; err != nil {
@@ -47,10 +47,36 @@ func (h *PendientesHandler) Listar(c *gin.Context) {
 		return
 	}
 
+	if len(tareas) == 0 {
+		c.JSON(http.StatusOK, gin.H{"success": true, "data": []ventaPendienteCAE{}})
+		return
+	}
+
+	ventaIDs := make([]uuid.UUID, len(tareas))
+	for i, t := range tareas {
+		ventaIDs[i] = t.VentaID
+	}
+	var ventas []models.Venta
+	if err := h.db.Preload("Items").Where("id IN ?", ventaIDs).Find(&ventas).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+	var facturas []models.Factura
+	h.db.Where("venta_id IN ?", ventaIDs).Find(&facturas)
+
+	ventaByID := make(map[uuid.UUID]models.Venta, len(ventas))
+	facturaByID := make(map[uuid.UUID]models.Factura, len(facturas))
+	for _, v := range ventas {
+		ventaByID[v.ID] = v
+	}
+	for _, f := range facturas {
+		facturaByID[f.VentaID] = f
+	}
+
 	resultado := make([]ventaPendienteCAE, 0, len(tareas))
 	for _, t := range tareas {
-		var venta models.Venta
-		if err := h.db.Preload("Items").First(&venta, "id = ?", t.VentaID).Error; err != nil {
+		venta, ok := ventaByID[t.VentaID]
+		if !ok {
 			continue
 		}
 		_, _, total := models.TotalesDeItems(venta.Items)
@@ -64,13 +90,10 @@ func (h *PendientesHandler) Listar(c *gin.Context) {
 			Estado:      t.Estado,
 			UltimoError: t.UltimoError,
 		}
-		if venta.Tipo == models.TipoFactura {
-			var factura models.Factura
-			if h.db.First(&factura, "venta_id = ?", venta.ID).Error == nil {
-				item.RazonSocial = factura.RazonSocial
-				item.CUITCliente = factura.CUITCliente
-				item.EmailCliente = factura.EmailCliente
-			}
+		if f, ok := facturaByID[venta.ID]; ok {
+			item.RazonSocial = f.RazonSocial
+			item.CUITCliente = f.CUITCliente
+			item.EmailCliente = f.EmailCliente
 		}
 		resultado = append(resultado, item)
 	}
@@ -90,7 +113,7 @@ func (h *PendientesHandler) Anular(c *gin.Context) {
 		return
 	}
 	var req anularCAERequest
-	_ = c.ShouldBindJSON(&req) // motivo es opcional, no hace falta rechazar el body vacío
+	_ = c.ShouldBindJSON(&req)
 
 	if err := h.worker.AnularCAE(ventaID, req.Motivo); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
@@ -105,7 +128,7 @@ type corregirFacturaRequest struct {
 	EmailCliente string `json:"email_cliente" binding:"required,email"`
 }
 
-// Corregir maneja PUT /api/pendientes-cae/:id/corregir — solo para facturas.
+// Corregir maneja PUT /api/pendientes-cae/:id/corregir
 func (h *PendientesHandler) Corregir(c *gin.Context) {
 	ventaID, err := uuid.Parse(c.Param("id"))
 	if err != nil {

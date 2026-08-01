@@ -243,9 +243,11 @@ export default function ReportePage() {
         tipoCmp:    v.tipo,
         numero:     v.numero_fiscal || v.numero,
         items:      itemsData,
-        subtotal:   total - iva,
+        subtotal:       total - iva,
         iva, total,
-        metodoPago: v.metodo_pago,
+        montoEfectivo:  v.monto_efectivo,
+        montoTarjeta:   v.monto_tarjeta,
+        montoBilletera: v.monto_billetera,
         cae:        v.cae,
         caeVto:     v.cae_vto ?? '',
         qrData:     v.qr_data ?? '',
@@ -256,9 +258,11 @@ export default function ReportePage() {
       await printer.imprimirNoFiscal({
         ...empresaBase,
         items:      itemsData,
-        subtotal:   total - iva,
+        subtotal:       total - iva,
         iva, total,
-        metodoPago: v.metodo_pago,
+        montoEfectivo:  v.monto_efectivo,
+        montoTarjeta:   v.monto_tarjeta,
+        montoBilletera: v.monto_billetera,
         titulo:    '*** COPIA DE TICKET ***',
         subtitulo: v.numero ? `No T. ${v.numero}` : '',
         fechaHora: `${fecha}  ${hora}`,
@@ -379,7 +383,11 @@ export default function ReportePage() {
                               {v.numero || '—'}
                             </span>
                             <span className="text-gray-400 text-sm flex-shrink-0" style={{ width: 90 }}>
-                              {v.metodo_pago === 'EFECTIVO' ? 'Efectivo' : v.metodo_pago === 'TARJETA' ? 'Tarjeta' : 'Billetera'}
+                              {[
+                                v.monto_efectivo  > 0 ? 'Efec' : '',
+                                v.monto_tarjeta   > 0 ? 'Tarj' : '',
+                                v.monto_billetera > 0 ? 'Bill' : '',
+                              ].filter(Boolean).join('+') || '—'}
                             </span>
                             <span className="font-mono text-gray-400 flex-shrink-0" style={{ fontSize: 13, width: 60 }}>{hora}</span>
                             <span style={{ flex: 1 }} />

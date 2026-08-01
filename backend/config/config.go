@@ -10,24 +10,26 @@ import (
 )
 
 type Config struct {
-	DatabaseURL    string // PostgreSQL DSN para GORM (Supabase connection string)
-	SupabaseURL    string // URL de la REST API de Supabase
-	SupabaseKey    string
-	ArcaCUIT       string
-	ArcaCertPath   string
-	ArcaKeyPath    string
-	ArcaEnv        string
-	ArcaPuntoVenta int
-	ResendAPIKey   string
+	DatabaseURL     string // PostgreSQL DSN para GORM
+	SupabaseURL     string
+	SupabaseKey     string
+	ArcaCUIT        string // solo para migración inicial; multi-tenant usa DB
+	ArcaCertContent string // PEM del certificado; se seedea en DB al arrancar
+	ArcaKeyContent  string // PEM de la clave privada; se seedea en DB al arrancar
+	ArcaEnv         string
+	ArcaPuntoVenta  int
+	ResendAPIKey    string
 	ResendFromEmail string
-	SMTPFromName   string
-	NegocioNombre  string
-	NegocioDirec   string
-	NegocioTel     string
-	NegocioIVACond string
-	Port           string
-	JWTSecret      string
-	CORSOrigins    []string
+	SMTPFromName    string
+	NegocioNombre   string
+	NegocioDirec    string
+	NegocioTel      string
+	NegocioIVACond  string
+	Port            string
+	JWTSecret       string
+	CORSOrigins     []string
+	InviteCode      string // requerido para nuevos registros; vacío = modo legacy (1 sola cuenta)
+	AdminSecret     string // si está seteado, habilita POST /admin/crear-cuenta
 }
 
 func Load() *Config {
@@ -37,15 +39,20 @@ func Load() *Config {
 
 	puntoVenta, _ := strconv.Atoi(getEnv("ARCA_PUNTO_VENTA", "1"))
 
+	// Soporta tanto el PEM directo (ARCA_CERT_CONTENT) como el archivo
+	// (ARCA_CERT_PATH + ARCA_CERT_CONTENT escrito por Railway en startup legacy).
+	certContent := getEnv("ARCA_CERT_CONTENT", "")
+	keyContent  := getEnv("ARCA_KEY_CONTENT", "")
+
 	return &Config{
-		DatabaseURL:    mustGetEnv("DATABASE_URL"),
-		SupabaseURL:    getEnv("SUPABASE_URL", ""),
-		SupabaseKey:    getEnv("SUPABASE_KEY", ""),
-		ArcaCUIT:       mustGetEnv("ARCA_CUIT"),
-		ArcaCertPath:   mustGetEnv("ARCA_CERT_PATH"),
-		ArcaKeyPath:    mustGetEnv("ARCA_KEY_PATH"),
-		ArcaEnv:        getEnv("ARCA_ENV", "testing"),
-		ArcaPuntoVenta: puntoVenta,
+		DatabaseURL:     mustGetEnv("DATABASE_URL"),
+		SupabaseURL:     getEnv("SUPABASE_URL", ""),
+		SupabaseKey:     getEnv("SUPABASE_KEY", ""),
+		ArcaCUIT:        getEnv("ARCA_CUIT", ""),
+		ArcaCertContent: certContent,
+		ArcaKeyContent:  keyContent,
+		ArcaEnv:         getEnv("ARCA_ENV", "testing"),
+		ArcaPuntoVenta:  puntoVenta,
 		ResendAPIKey:    getEnv("RESEND_API_KEY", ""),
 		ResendFromEmail: getEnv("RESEND_FROM_EMAIL", "onboarding@resend.dev"),
 		SMTPFromName:    getEnv("SMTP_FROM_NAME", "PosArca Fiscal"),
@@ -56,10 +63,11 @@ func Load() *Config {
 		Port:           getEnv("PORT", "8080"),
 		JWTSecret:      mustGetEnvFailFast("JWT_SECRET"),
 		CORSOrigins:    parseOrigins(getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:5173")),
+		InviteCode:     getEnv("INVITE_CODE", ""),
+		AdminSecret:    getEnv("ADMIN_SECRET", ""),
 	}
 }
 
-// parseOrigins separa una lista de orígenes separados por coma (sin espacios sobrantes).
 func parseOrigins(raw string) []string {
 	var origins []string
 	for _, o := range strings.Split(raw, ",") {
@@ -85,8 +93,6 @@ func mustGetEnv(key string) string {
 	return v
 }
 
-// mustGetEnvFailFast aborta el arranque si falta una variable que no admite
-// ningún valor por defecto seguro (a diferencia de mustGetEnv, que solo avisa).
 func mustGetEnvFailFast(key string) string {
 	v := os.Getenv(key)
 	if v == "" {

@@ -12,26 +12,26 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"pos-fiscal/config"
 	"pos-fiscal/internal/models"
 )
 
 type SyncHandler struct {
 	db     *gorm.DB
-	cfg    *config.Config
 	worker *Worker
 }
 
-func NuevoSyncHandler(db *gorm.DB, cfg *config.Config, worker *Worker) *SyncHandler {
-	return &SyncHandler{db: db, cfg: cfg, worker: worker}
+func NuevoSyncHandler(db *gorm.DB, worker *Worker) *SyncHandler {
+	return &SyncHandler{db: db, worker: worker}
 }
 
 type VentaOffline struct {
-	ID         string                 `json:"id"`
-	Tipo       models.TipoComprobante `json:"tipo"`
-	Items      []models.ItemRequest   `json:"items"`
-	MetodoPago models.MetodoPago      `json:"metodo_pago"`
-	CreatedAt  time.Time              `json:"created_at"`
+	ID             string                 `json:"id"`
+	Tipo           models.TipoComprobante `json:"tipo"`
+	Items          []models.ItemRequest   `json:"items"`
+	MontoEfectivo  float64                `json:"monto_efectivo"`
+	MontoTarjeta   float64                `json:"monto_tarjeta"`
+	MontoBilletera float64                `json:"monto_billetera"`
+	CreatedAt      time.Time              `json:"created_at"`
 }
 
 type SyncResultado struct {
@@ -52,18 +52,21 @@ func (h *SyncHandler) SincronizarVentas(c *gin.Context) {
 		return
 	}
 
+	empresaID := getEmpresaID(c)
+	empresa, err := loadEmpresa(h.db, empresaID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "empresa no encontrada"})
+		return
+	}
+
 	ctx := c.Request.Context()
 
-	// Orden cronológico: el número de comprobante tiene que asignarse en el mismo
-	// orden en que se vendió, o ARCA puede rechazar un CAE con fecha "para atrás"
-	// respecto del último número autorizado. Por eso se procesa secuencial, no en
-	// paralelo — una venta a la vez, en el orden en que ocurrieron.
 	ventas := append([]VentaOffline(nil), req.Ventas...)
 	sort.Slice(ventas, func(i, j int) bool { return ventas[i].CreatedAt.Before(ventas[j].CreatedAt) })
 
 	resultados := make([]SyncResultado, len(ventas))
 	for i, v := range ventas {
-		resultados[i] = h.procesarOffline(ctx, v)
+		resultados[i] = h.procesarOffline(ctx, v, empresaID, empresa.PuntoVenta)
 	}
 
 	exitosos := 0
@@ -84,15 +87,12 @@ func (h *SyncHandler) SincronizarVentas(c *gin.Context) {
 	})
 }
 
-func (h *SyncHandler) procesarOffline(ctx context.Context, v VentaOffline) SyncResultado {
+func (h *SyncHandler) procesarOffline(ctx context.Context, v VentaOffline, empresaID uuid.UUID, puntoVenta int) SyncResultado {
 	ventaID, err := uuid.Parse(v.ID)
 	if err != nil {
 		return SyncResultado{ID: v.ID, Error: "UUID inválido", Success: false}
 	}
 
-	// Idempotencia real: si la venta ya existe pero se quedó sin CAE (ARCA falló
-	// en un intento anterior, después de crearla), hay que reintentar el CAE — no
-	// alcanza con que la fila exista para considerarla sincronizada.
 	var existente models.Venta
 	yaExiste := h.db.Where("id = ?", ventaID).First(&existente).Error == nil
 
@@ -106,18 +106,21 @@ func (h *SyncHandler) procesarOffline(ctx context.Context, v VentaOffline) SyncR
 	var numero string
 	err = h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var err error
-		numero, err = siguienteNumero(tx, v.Tipo, h.cfg.ArcaPuntoVenta)
+		numero, err = siguienteNumero(tx, v.Tipo, empresaID, puntoVenta)
 		if err != nil {
 			return fmt.Errorf("número: %w", err)
 		}
 
 		venta := models.Venta{
-			ID:           ventaID,
-			Tipo:         v.Tipo,
-			Numero:       numero,
-			MetodoPago:   v.MetodoPago,
-			CreatedAt:    v.CreatedAt,
-			Sincronizado: true,
+			ID:             ventaID,
+			EmpresaID:      empresaID,
+			Tipo:           v.Tipo,
+			Numero:         numero,
+			MontoEfectivo:  v.MontoEfectivo,
+			MontoTarjeta:   v.MontoTarjeta,
+			MontoBilletera: v.MontoBilletera,
+			CreatedAt:      v.CreatedAt,
+			Sincronizado:   true,
 		}
 		if err := tx.Create(&venta).Error; err != nil {
 			return err
@@ -139,8 +142,6 @@ func (h *SyncHandler) procesarOffline(ctx context.Context, v VentaOffline) SyncR
 	return h.solicitarCAEYResultado(ctx, models.Venta{ID: ventaID, Numero: numero})
 }
 
-// solicitarCAEYResultado consigue el CAE de una venta ya persistida (recién creada
-// o de un reintento) vía el worker, que además persiste CAE/QR y encola la impresión.
 func (h *SyncHandler) solicitarCAEYResultado(ctx context.Context, venta models.Venta) SyncResultado {
 	cae, err := h.worker.obtenerCAE(ctx, venta.ID)
 	if err != nil {

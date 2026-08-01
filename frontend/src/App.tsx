@@ -5,6 +5,7 @@ import ReportePage from './pages/ReportePage'
 import ConfigPage  from './pages/ConfigPage'
 import LoginPage   from './pages/LoginPage'
 import SetupPage   from './pages/SetupPage'
+import AdminPage   from './pages/AdminPage'
 import { useSyncStore }     from './stores/syncStore'
 import { useAuthStore }     from './stores/authStore'
 import { useEmpresaStore }  from './stores/empresaStore'
@@ -39,6 +40,7 @@ export default function App() {
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  if (window.location.pathname === '/admin') return <AdminPage />
   if (!isAuthenticated()) return <LoginPage />
   if (!hydrated) return null
   if (!configurada) return <SetupPage onComplete={cargar} />

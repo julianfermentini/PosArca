@@ -4,26 +4,27 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"pos-fiscal/config"
 	"pos-fiscal/internal/models"
 )
 
 type EmpresaHandler struct {
-	db  *gorm.DB
-	cfg *config.Config
+	db *gorm.DB
 }
 
-func NuevoEmpresaHandler(db *gorm.DB, cfg *config.Config) *EmpresaHandler {
-	return &EmpresaHandler{db: db, cfg: cfg}
+func NuevoEmpresaHandler(db *gorm.DB) *EmpresaHandler {
+	return &EmpresaHandler{db: db}
 }
 
-// Get devuelve la configuración de la empresa.
-// Si todavía no fue guardada en la BD, devuelve los valores del .env como defaults.
+// Get devuelve la configuración de la empresa del usuario autenticado.
 func (h *EmpresaHandler) Get(c *gin.Context) {
-	emp := getEmpresaConf(h.db, h.cfg)
+	empresaID := getEmpresaID(c)
+	emp, err := loadEmpresa(h.db, empresaID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"success": false, "error": "empresa no encontrada"})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": emp})
 }
 
@@ -38,7 +39,7 @@ type UpdateEmpresaReq struct {
 	DefensaConsumidor string `json:"defensa_consumidor"`
 }
 
-// Update guarda (upsert) los datos del negocio.
+// Update guarda los datos del negocio de la empresa del usuario autenticado.
 func (h *EmpresaHandler) Update(c *gin.Context) {
 	var req UpdateEmpresaReq
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -46,17 +47,11 @@ func (h *EmpresaHandler) Update(c *gin.Context) {
 		return
 	}
 
+	empresaID := getEmpresaID(c)
 	var emp models.ConfigEmpresa
-	h.db.First(&emp)
-
-	// Primer uso: crear nuevo registro con campos ARCA desde .env
-	if emp.ID == uuid.Nil {
-		emp.ID = uuid.New()
-		emp.CUIT = h.cfg.ArcaCUIT
-		emp.PuntoVenta = h.cfg.ArcaPuntoVenta
-		emp.ArcaEnv = h.cfg.ArcaEnv
-		emp.CertPath = h.cfg.ArcaCertPath
-		emp.KeyPath = h.cfg.ArcaKeyPath
+	if err := h.db.First(&emp, "id = ?", empresaID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"success": false, "error": "empresa no encontrada"})
+		return
 	}
 
 	emp.RazonSocial = req.RazonSocial

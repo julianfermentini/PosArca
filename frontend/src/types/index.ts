@@ -24,7 +24,9 @@ export interface Venta {
   // Número real que autorizó ARCA — distinto de numero (contador local/provisorio).
   // Es el que hay que imprimir/mostrar/poner en el QR una vez que hay CAE.
   numero_fiscal?: string
-  metodo_pago: MetodoPago
+  monto_efectivo: number
+  monto_tarjeta: number
+  monto_billetera: number
   impreso: boolean
   sincronizado: boolean
   cae?: string
@@ -60,7 +62,9 @@ export interface VentaOffline {
   id: string
   tipo: TipoComprobante
   items: ItemRequest[]
-  metodo_pago: MetodoPago
+  monto_efectivo: number
+  monto_tarjeta: number
+  monto_billetera: number
   created_at: string
   estado_sync: EstadoSync
 }

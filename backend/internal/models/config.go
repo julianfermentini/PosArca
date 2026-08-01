@@ -8,8 +8,8 @@ type ConfigEmpresa struct {
 	RazonSocial       string    `gorm:"not null" json:"razon_social"`
 	Titular           string    `gorm:"default:''" json:"titular"`
 	PuntoVenta        int       `gorm:"default:1" json:"punto_venta"`
-	CertPath          string    `json:"cert_path,omitempty"`
-	KeyPath           string    `json:"key_path,omitempty"`
+	CertPEM           string    `gorm:"column:cert_pem;default:''" json:"-"`
+	KeyPEM            string    `gorm:"column:key_pem;default:''" json:"-"`
 	ArcaEnv           string    `gorm:"default:'testing'" json:"arca_env"`
 	Direccion         string    `gorm:"default:''" json:"direccion"`
 	Telefono          string    `gorm:"default:''" json:"telefono"`

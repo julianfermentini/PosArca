@@ -19,8 +19,10 @@ func NuevoProductoHandler(db *gorm.DB) *ProductoHandler {
 }
 
 func (h *ProductoHandler) List(c *gin.Context) {
+	empresaID := getEmpresaID(c)
+
 	var productos []models.Producto
-	h.db.Order("created_at asc").Find(&productos)
+	h.db.Where("empresa_id = ?", empresaID).Order("created_at asc").Find(&productos)
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": productos})
 }
 
@@ -35,7 +37,8 @@ func (h *ProductoHandler) Create(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
 		return
 	}
-	p := models.Producto{ID: uuid.New(), Nombre: req.Nombre, Precio: req.Precio}
+	empresaID := getEmpresaID(c)
+	p := models.Producto{ID: uuid.New(), EmpresaID: empresaID, Nombre: req.Nombre, Precio: req.Precio}
 	if err := h.db.Create(&p).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
 		return
@@ -54,8 +57,9 @@ func (h *ProductoHandler) Update(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
 		return
 	}
+	empresaID := getEmpresaID(c)
 	var p models.Producto
-	if err := h.db.First(&p, "id = ?", id).Error; err != nil {
+	if err := h.db.First(&p, "id = ? AND empresa_id = ?", id, empresaID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"success": false, "error": "producto no encontrado"})
 		return
 	}
@@ -71,6 +75,7 @@ func (h *ProductoHandler) Delete(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "id inválido"})
 		return
 	}
-	h.db.Delete(&models.Producto{}, "id = ?", id)
+	empresaID := getEmpresaID(c)
+	h.db.Delete(&models.Producto{}, "id = ? AND empresa_id = ?", id, empresaID)
 	c.JSON(http.StatusOK, gin.H{"success": true})
 }

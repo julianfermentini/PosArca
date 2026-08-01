@@ -28,18 +28,22 @@ const (
 // numeraciones independientes: el ticket/factura impreso y el QR (que ARCA
 // valida contra sus propios registros) tienen que usar NumeroFiscal, no Numero.
 type Venta struct {
-	ID           uuid.UUID       `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
-	Tipo         TipoComprobante `gorm:"not null;uniqueIndex:idx_ventas_tipo_numero" json:"tipo"`
-	Numero       string          `gorm:"uniqueIndex:idx_ventas_tipo_numero" json:"numero,omitempty"`
-	NumeroFiscal string          `gorm:"column:numero_fiscal;default:''" json:"numero_fiscal,omitempty"`
-	MetodoPago   MetodoPago      `gorm:"not null" json:"metodo_pago"`
-	Impreso      bool            `gorm:"default:false" json:"impreso"`
-	Sincronizado bool            `gorm:"default:false" json:"sincronizado"`
-	CAE          string          `gorm:"default:''" json:"cae,omitempty"`
-	CAEVto       *time.Time      `json:"cae_vto,omitempty"`
-	QRData       string          `gorm:"column:qr_data;default:''" json:"qr_data,omitempty"`
-	CreatedAt    time.Time       `gorm:"index" json:"created_at"`
-	Items        []VentaItem     `gorm:"foreignKey:VentaID;constraint:OnDelete:CASCADE" json:"items,omitempty"`
+	ID             uuid.UUID       `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	EmpresaID      uuid.UUID       `gorm:"type:uuid;index" json:"empresa_id"`
+	Tipo           TipoComprobante `gorm:"not null;uniqueIndex:idx_ventas_tipo_numero" json:"tipo"`
+	Numero         string          `gorm:"uniqueIndex:idx_ventas_tipo_numero" json:"numero,omitempty"`
+	NumeroFiscal   string          `gorm:"column:numero_fiscal;default:''" json:"numero_fiscal,omitempty"`
+	MetodoPago     MetodoPago      `gorm:"default:''" json:"metodo_pago,omitempty"`
+	MontoEfectivo  float64         `gorm:"default:0" json:"monto_efectivo"`
+	MontoTarjeta   float64         `gorm:"default:0" json:"monto_tarjeta"`
+	MontoBilletera float64         `gorm:"default:0" json:"monto_billetera"`
+	Impreso        bool            `gorm:"default:false" json:"impreso"`
+	Sincronizado   bool            `gorm:"default:false" json:"sincronizado"`
+	CAE            string          `gorm:"default:''" json:"cae,omitempty"`
+	CAEVto         *time.Time      `json:"cae_vto,omitempty"`
+	QRData         string          `gorm:"column:qr_data;default:''" json:"qr_data,omitempty"`
+	CreatedAt      time.Time       `gorm:"index" json:"created_at"`
+	Items          []VentaItem     `gorm:"foreignKey:VentaID;constraint:OnDelete:CASCADE" json:"items,omitempty"`
 }
 
 func (Venta) TableName() string { return "ventas" }

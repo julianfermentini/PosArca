@@ -7,7 +7,7 @@ import { usePrinterStore } from '../stores/printerStore'
 import { NumericKeypad } from '../components/features/venta/NumericKeypad'
 import { ventasApi, facturasApi } from '../lib/api'
 import { formatPrecio, generarUUID, validarCUIT, formatCUIT, calcularTotal } from '../lib/utils'
-import type { MetodoPago, VentaOffline } from '../types'
+import type { VentaOffline } from '../types'
 
 type Paso = 'descripcion' | 'precio'
 
@@ -31,12 +31,14 @@ export default function VentaPage() {
   const [razonSocial, setRazonSocial]       = useState('')
   const [cuit, setCuit]                     = useState('')
   const [emailCliente, setEmailCliente]     = useState('')
+  const [dividirPago, setDividirPago]       = useState(false)
 
   useEffect(() => {
     sync.actualizarConteo()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const puedeEmitir = store.carrito.length > 0 && !!store.metodoPago
+  const sumaPagos   = store.getSumaPagos()
+  const puedeEmitir = store.carrito.length > 0 && Math.abs(sumaPagos - store.getTotal()) < 0.02
 
   const handleProductoClick = useCallback((producto: Producto) => {
     if (producto.precio !== null) {
@@ -51,6 +53,7 @@ export default function VentaPage() {
     store.limpiarCarrito()
     setPaso('descripcion')
     setNeedsFactura(false)
+    setDividirPago(false)
     setRazonSocial('')
     setCuit('')
     setEmailCliente('')
@@ -65,174 +68,97 @@ export default function VentaPage() {
     setErrorMsg('')
 
     try {
-      // Si hay ventas offline sin sincronizar, sincronizarlas antes de emitir esta
-      // — si no, esta venta consigue número antes que una anterior que todavía no
-      // lo tiene, y se rompe el orden correlativo del comprobante.
+      // Snapshot ÚNICO del carrito — capturado antes del primer await porque
+      // mostrarExito() limpia el store. sincronizar() no toca el carrito.
+      const snapItems    = store.getItemsParaAPI()
+      const snapSubtotal = store.getSubtotal()
+      const snapIva      = store.getIVA()
+      const snapTotal    = store.getTotal()
+      const snapEf       = store.montoEfectivo
+      const snapTar      = store.montoTarjeta
+      const snapBil      = store.montoBilletera
+
+      // Helpers derivados del snapshot — no se recalculan por rama
+      const itemsPrinter   = snapItems.map(it => ({
+        descripcion: it.descripcion,
+        precioNeto:  it.precio_neto,
+        total:       calcularTotal(it.precio_neto),
+        cantidad:    it.cantidad,
+      }))
+      const totalesPrinter = { subtotal: snapSubtotal, iva: snapIva, total: snapTotal }
+      const pagosPrinter   = { montoEfectivo: snapEf, montoTarjeta: snapTar, montoBilletera: snapBil }
+
+      const imprimirNoFiscalSnap = () => {
+        if (!printer.conectado) return
+        printer.imprimirNoFiscal({ ...empresaBase, items: itemsPrinter, ...totalesPrinter, ...pagosPrinter })
+      }
+
+      // Sincronizar ventas offline pendientes antes de emitir — si no, esta venta
+      // consigue número antes que una anterior, rompiendo el orden correlativo ARCA.
       if (sync.online && sync.pendientes > 0) {
         await sync.sincronizar()
       }
 
       if (needsFactura) {
-        if (!razonSocial.trim())    { setErrorMsg('Ingresá la razón social'); return }
-        if (!validarCUIT(cuit))     { setErrorMsg('CUIT inválido'); return }
+        if (!razonSocial.trim())         { setErrorMsg('Ingresá la razón social'); return }
+        if (!validarCUIT(cuit))          { setErrorMsg('CUIT inválido'); return }
         if (!emailCliente.includes('@')) { setErrorMsg('Email inválido'); return }
 
-        // Snapshot antes de que mostrarExito limpie el carrito, por si hay que
-        // imprimir un comprobante no fiscal (ARCA caído).
-        const itemsSnap    = store.getItemsParaAPI()
-        const subtotalSnap = store.getSubtotal()
-        const ivaSnap      = store.getIVA()
-        const totalSnap    = store.getTotal()
-        const metodoSnap   = store.metodoPago!
-
         const { data } = await facturasApi.crear({
-          items: itemsSnap,
-          metodo_pago: metodoSnap,
-          razon_social: razonSocial.trim(),
-          cuit_cliente: cuit,
-          email_cliente: emailCliente,
+          items:           snapItems,
+          monto_efectivo:  snapEf,
+          monto_tarjeta:   snapTar,
+          monto_billetera: snapBil,
+          razon_social:    razonSocial.trim(),
+          cuit_cliente:    cuit,
+          email_cliente:   emailCliente,
         })
         if (!data.success) throw new Error(data.error || 'Error al emitir factura')
 
-        if (data.data!.pendiente_cae) {
-          // ARCA no disponible: la factura quedó registrada y se autoriza sola; el
-          // PDF llega por email cuando se autorice. Mientras, comprobante no fiscal.
-          mostrarExito('Factura', 'PENDIENTE')
-          if (printer.conectado) {
-            printer.imprimirNoFiscal({
-              negocioNombre:     empresa?.razon_social ?? '',
-              titular:           empresa?.titular ?? '',
-              cuit:              empresa?.cuit ?? '',
-              ingBrutos:         empresa?.ing_brutos ?? '',
-              direccion:         empresa?.direccion ?? '',
-              defensaConsumidor: empresa?.defensa_consumidor ?? '',
-              condicionIVA:      empresa?.condicion_iva ?? '',
-              items: itemsSnap.map(it => ({
-                descripcion: it.descripcion,
-                precioNeto:  it.precio_neto,
-                total:       calcularTotal(it.precio_neto),
-                cantidad:    it.cantidad,
-              })),
-              subtotal:   subtotalSnap,
-              iva:        ivaSnap,
-              total:      totalSnap,
-              metodoPago: metodoSnap,
-            })
-          }
-        } else {
-          mostrarExito('Factura', data.data!.numero)
-        }
+        mostrarExito('Factura', data.data!.pendiente_cae ? 'PENDIENTE' : data.data!.numero)
+        // ARCA caído: la factura se autoriza sola en segundo plano; mientras, no fiscal.
+        if (data.data!.pendiente_cae) imprimirNoFiscalSnap()
+
+      } else if (!sync.online) {
+        await sync.guardarOffline({
+          id: generarUUID(), tipo: 'TICKET',
+          items:           snapItems,
+          monto_efectivo:  snapEf,
+          monto_tarjeta:   snapTar,
+          monto_billetera: snapBil,
+          created_at:      new Date().toISOString(),
+          estado_sync:     'PENDIENTE',
+        })
+        mostrarExito('Ticket', 'OFFLINE')
+        imprimirNoFiscalSnap()
+
       } else {
-        if (!sync.online) {
-          // Capturar antes de limpiar el carrito
-          const itemsOffline    = store.getItemsParaAPI()
-          const subtotalOffline = store.getSubtotal()
-          const ivaOffline      = store.getIVA()
-          const totalOffline    = store.getTotal()
-          const metodoOffline   = store.metodoPago!
-
-          const venta: VentaOffline = {
-            id: generarUUID(),
-            tipo: 'TICKET',
-            items: itemsOffline,
-            metodo_pago: metodoOffline,
-            created_at: new Date().toISOString(),
-            estado_sync: 'PENDIENTE',
-          }
-          await sync.guardarOffline(venta)
-          mostrarExito('Ticket', 'OFFLINE')
-
-          // Imprimir ticket no fiscal para el cliente
-          if (printer.conectado) {
-            printer.imprimirNoFiscal({
-              negocioNombre:     empresa?.razon_social ?? '',
-              titular:           empresa?.titular ?? '',
-              cuit:              empresa?.cuit ?? '',
-              ingBrutos:         empresa?.ing_brutos ?? '',
-              direccion:         empresa?.direccion ?? '',
-              defensaConsumidor: empresa?.defensa_consumidor ?? '',
-              condicionIVA:      empresa?.condicion_iva ?? '',
-              items: itemsOffline.map(it => ({
-                descripcion: it.descripcion,
-                precioNeto:  it.precio_neto,
-                total:       calcularTotal(it.precio_neto),
-                cantidad:    it.cantidad,
-              })),
-              subtotal:   subtotalOffline,
-              iva:        ivaOffline,
-              total:      totalOffline,
-              metodoPago: metodoOffline,
-            })
-          }
-          return
-        }
-
-        // Capturar datos del carrito antes de limpiar para el ticket
-        const itemsSnap    = store.getItemsParaAPI()
-        const subtotalSnap = store.getSubtotal()
-        const ivaSnap      = store.getIVA()
-        const totalSnap    = store.getTotal()
-        const metodoPago   = store.metodoPago!
-
         const { data } = await ventasApi.crear({
-          tipo: 'TICKET',
-          items: itemsSnap,
-          metodo_pago: metodoPago,
+          tipo:            'TICKET',
+          items:           snapItems,
+          monto_efectivo:  snapEf,
+          monto_tarjeta:   snapTar,
+          monto_billetera: snapBil,
         })
         if (data.success && data.data) {
           if (data.data.pendiente_cae) {
-            // ARCA no disponible: la venta quedó registrada y consigue el CAE sola
-            // más tarde. Al cliente se le da un ticket NO fiscal como comprobante.
             mostrarExito('Ticket', 'PENDIENTE')
-            if (printer.conectado) {
-              printer.imprimirNoFiscal({
-                negocioNombre:     empresa?.razon_social ?? '',
-                titular:           empresa?.titular ?? '',
-                cuit:              empresa?.cuit ?? '',
-                ingBrutos:         empresa?.ing_brutos ?? '',
-                direccion:         empresa?.direccion ?? '',
-                defensaConsumidor: empresa?.defensa_consumidor ?? '',
-                condicionIVA:      empresa?.condicion_iva ?? '',
-                items: itemsSnap.map(it => ({
-                  descripcion: it.descripcion,
-                  precioNeto:  it.precio_neto,
-                  total:       calcularTotal(it.precio_neto),
-                })),
-                subtotal:   subtotalSnap,
-                iva:        ivaSnap,
-                total:      totalSnap,
-                metodoPago: metodoPago,
-              })
-            }
+            imprimirNoFiscalSnap()
           } else {
             mostrarExito('Ticket', data.data.numero)
-
-            // Imprimir el ticket fiscal desde el tablet si hay impresora conectada
             if (printer.conectado) {
               printer.imprimir({
-                negocioNombre:      empresa?.razon_social ?? '',
-                titular:            empresa?.titular ?? '',
-                cuit:               empresa?.cuit ?? '',
-                ingBrutos:          empresa?.ing_brutos ?? '',
-                direccion:          empresa?.direccion ?? '',
-                inicioActividades:  empresa?.inicio_actividades ?? '',
-                defensaConsumidor:  empresa?.defensa_consumidor ?? '',
-                condicionIVA:       empresa?.condicion_iva ?? '',
-                puntoVenta:         empresa?.punto_venta ?? 1,
-                tipoCmp:            'TICKET',
-                numero:             data.data.numero,
-                items:              itemsSnap.map(it => ({
-                  descripcion: it.descripcion,
-                  precioNeto:  it.precio_neto,
-                  total:       calcularTotal(it.precio_neto),
-                })),
-                subtotal:   subtotalSnap,
-                iva:        ivaSnap,
-                total:      totalSnap,
-                metodoPago: metodoPago,
-                cae:        data.data.cae ?? '',
-                caeVto:     data.data.cae_vto ?? '',
-                qrData:     data.data.qr_data ?? '',
+                ...empresaBase,
+                inicioActividades: empresa?.inicio_actividades ?? '',
+                puntoVenta:        empresa?.punto_venta ?? 1,
+                tipoCmp:           'TICKET',
+                numero:            data.data.numero,
+                items:             itemsPrinter,
+                ...totalesPrinter,
+                ...pagosPrinter,
+                cae:    data.data.cae ?? '',
+                caeVto: data.data.cae_vto ?? '',
+                qrData: data.data.qr_data ?? '',
               })
             }
           }
@@ -254,6 +180,16 @@ export default function VentaPage() {
   const total = store.getTotal()
   const neto  = store.getSubtotal()
   const iva   = store.getIVA()
+
+  const empresaBase = {
+    negocioNombre:     empresa?.razon_social ?? '',
+    titular:           empresa?.titular ?? '',
+    cuit:              empresa?.cuit ?? '',
+    ingBrutos:         empresa?.ing_brutos ?? '',
+    direccion:         empresa?.direccion ?? '',
+    defensaConsumidor: empresa?.defensa_consumidor ?? '',
+    condicionIVA:      empresa?.condicion_iva ?? '',
+  }
 
   const mtab = (t: typeof mobileTab) =>
     `flex-1 py-2 text-xs font-bold transition-colors rounded-lg ${mobileTab === t ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500'}`
@@ -472,26 +408,109 @@ export default function VentaPage() {
 
           {/* Payment method */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <p className="text-gray-400 font-bold uppercase tracking-widest" style={{ fontSize: 10 }}>Método de pago</p>
-            <div className="flex rounded-xl p-1" style={{ background: '#F3F4F6', gap: 4 }}>
-              {(['EFECTIVO', 'TARJETA', 'BILLETERA'] as MetodoPago[]).map(m => (
+            <p className="text-gray-400 font-bold uppercase tracking-widest" style={{ fontSize: 10 }}>Forma de pago</p>
+
+            {!dividirPago ? (
+              <>
+                <div className="flex rounded-xl p-1" style={{ background: '#F3F4F6', gap: 4 }}>
+                  {([
+                    { label: 'Efectivo',  ef: total, tar: 0,     bil: 0     },
+                    { label: 'Tarjeta',   ef: 0,     tar: total, bil: 0     },
+                    { label: 'Billetera', ef: 0,     tar: 0,     bil: total },
+                  ] as const).map(m => {
+                    const activo = Math.abs(store.montoEfectivo  - m.ef)  < 0.01 &&
+                                   Math.abs(store.montoTarjeta   - m.tar) < 0.01 &&
+                                   Math.abs(store.montoBilletera - m.bil) < 0.01 &&
+                                   sumaPagos > 0
+                    return (
+                      <button
+                        key={m.label}
+                        onPointerDown={e => {
+                          e.preventDefault()
+                          store.setMontoEfectivo(m.ef)
+                          store.setMontoTarjeta(m.tar)
+                          store.setMontoBilletera(m.bil)
+                        }}
+                        className="flex-1 rounded-lg text-sm font-semibold transition-all touch-manipulation active:scale-95"
+                        style={{
+                          height: 42, border: 'none', cursor: 'pointer',
+                          background: activo ? '#3B72E0' : 'transparent',
+                          color: activo ? '#fff' : '#6B7280',
+                          boxShadow: activo ? '0 1px 3px rgba(59,114,224,0.3)' : 'none',
+                        }}
+                      >
+                        {m.label}
+                      </button>
+                    )
+                  })}
+                </div>
                 <button
-                  key={m}
-                  onPointerDown={e => { e.preventDefault(); store.setMetodoPago(m) }}
-                  className="flex-1 rounded-lg text-sm font-semibold transition-all touch-manipulation active:scale-95"
-                  style={{
-                    height: 42,
-                    border: 'none',
-                    cursor: 'pointer',
-                    background: store.metodoPago === m ? '#3B72E0' : 'transparent',
-                    color: store.metodoPago === m ? '#fff' : '#6B7280',
-                    boxShadow: store.metodoPago === m ? '0 1px 3px rgba(59,114,224,0.3)' : 'none',
+                  onPointerDown={e => {
+                    e.preventDefault()
+                    store.setMontoEfectivo(0)
+                    store.setMontoTarjeta(0)
+                    store.setMontoBilletera(0)
+                    setDividirPago(true)
                   }}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, textAlign: 'right' }}
+                  className="text-xs font-medium touch-manipulation"
+                  onMouseOver={e => (e.currentTarget.style.color = '#1D4ED8')}
+                  onMouseOut={e => (e.currentTarget.style.color = '#3B72E0')}
                 >
-                  {m === 'EFECTIVO' ? 'Efectivo' : m === 'TARJETA' ? 'Tarjeta' : 'Billetera'}
+                  <span style={{ color: '#3B72E0' }}>Dividir pago ›</span>
                 </button>
-              ))}
-            </div>
+              </>
+            ) : (
+              <div className="rounded-xl border border-gray-100 flex flex-col" style={{ background: '#F9FAFB', padding: '12px 14px', gap: 8 }}>
+                {([
+                  { label: 'Efectivo',          value: store.montoEfectivo,  set: store.setMontoEfectivo },
+                  { label: 'Tarjeta',           value: store.montoTarjeta,   set: store.setMontoTarjeta },
+                  { label: 'Billetera digital', value: store.montoBilletera, set: store.setMontoBilletera },
+                ] as const).map(({ label, value, set }) => (
+                  <div key={label} className="flex items-center gap-3">
+                    <span className="text-gray-600 text-sm flex-shrink-0" style={{ minWidth: 112 }}>{label}</span>
+                    <div className="flex items-center gap-1 flex-1">
+                      <span className="text-gray-400 text-sm">$</span>
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        min="0"
+                        step="0.01"
+                        value={value === 0 ? '' : value}
+                        onChange={e => set(e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
+                        placeholder="0"
+                        className="w-full border border-gray-200 rounded-lg outline-none font-mono text-right transition-all"
+                        style={{ padding: '7px 10px', fontSize: 13 }}
+                        onFocus={e => (e.target.style.borderColor = '#3B72E0')}
+                        onBlur={e => (e.target.style.borderColor = '')}
+                      />
+                    </div>
+                  </div>
+                ))}
+                <div style={{ height: 1, background: 'rgba(0,0,0,0.06)', margin: '2px 0' }} />
+                <div className="flex items-center justify-between">
+                  <button
+                    onPointerDown={e => {
+                      e.preventDefault()
+                      store.setMontoEfectivo(0)
+                      store.setMontoTarjeta(0)
+                      store.setMontoBilletera(0)
+                      setDividirPago(false)
+                    }}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: '#3B72E0' }}
+                    className="text-xs font-medium touch-manipulation"
+                  >
+                    ‹ Pago único
+                  </button>
+                  <span className="font-mono font-semibold" style={{
+                    fontSize: 13,
+                    color: Math.abs(sumaPagos - total) < 0.02 ? '#16A34A' : sumaPagos > total ? '#DC2626' : '#6B7280',
+                  }}>
+                    Restante {formatPrecio(Math.max(0, total - sumaPagos))}
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Factura toggle */}
@@ -618,23 +637,19 @@ export default function VentaPage() {
                 e.preventDefault()
                 if (!puedeEmitir) return
                 printer.imprimirNoFiscal({
-                  negocioNombre:     empresa?.razon_social ?? '',
-                  titular:           empresa?.titular ?? '',
-                  cuit:              empresa?.cuit ?? '',
-                  ingBrutos:         empresa?.ing_brutos ?? '',
-                  direccion:         empresa?.direccion ?? '',
-                  defensaConsumidor: empresa?.defensa_consumidor ?? '',
-                  condicionIVA:      empresa?.condicion_iva ?? '',
+                  ...empresaBase,
                   items: store.getItemsParaAPI().map(it => ({
                     descripcion: it.descripcion,
                     precioNeto:  it.precio_neto,
                     total:       calcularTotal(it.precio_neto),
                     cantidad:    it.cantidad,
                   })),
-                  subtotal:   store.getSubtotal(),
-                  iva:        store.getIVA(),
-                  total:      store.getTotal(),
-                  metodoPago: store.metodoPago ?? 'EFECTIVO',
+                  subtotal:       neto,
+                  iva,
+                  total,
+                  montoEfectivo:  store.montoEfectivo,
+                  montoTarjeta:   store.montoTarjeta,
+                  montoBilletera: store.montoBilletera,
                 })
               }}
               disabled={!puedeEmitir}

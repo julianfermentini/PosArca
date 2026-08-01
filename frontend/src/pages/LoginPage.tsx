@@ -8,14 +8,25 @@ export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [negocio, setNegocio] = useState('')
+  const [inviteCode, setInviteCode] = useState('')
+  const [inviteEnabled, setInviteEnabled] = useState(false)
+  const [hasUsers, setHasUsers] = useState(true)
   const [error, setError] = useState('')
   const [cargando, setCargando] = useState(false)
 
   useEffect(() => {
     authApi.status().then(({ data }) => {
-      if (!data.data?.has_users) setModo('register')
+      const d = data.data
+      const usersExist = d?.has_users ?? false
+      setHasUsers(usersExist)
+      setInviteEnabled(d?.invite_enabled ?? false)
+      if (!usersExist) setModo('register')
     }).catch(() => {})
   }, [])
+
+  // El registro público solo está disponible en el primer arranque o con código de invitación.
+  // Si hay usuarios y no hay invite_enabled, las cuentas se crean solo vía admin.
+  const puedeRegistrarse = !hasUsers || inviteEnabled
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -25,7 +36,7 @@ export default function LoginPage() {
     try {
       const fn = modo === 'login'
         ? authApi.login(email, password)
-        : authApi.register(email, password, negocio)
+        : authApi.register(email, password, negocio, inviteCode)
       const { data } = await fn
       if (data.success && data.data) {
         setAuth(data.data.token, data.data.email, data.data.negocio_nombre)
@@ -39,6 +50,8 @@ export default function LoginPage() {
       setCargando(false)
     }
   }
+
+  const inputCls = 'w-full border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none transition-all'
 
   return (
     <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4 md:p-8">
@@ -90,22 +103,40 @@ export default function LoginPage() {
           </div>
 
           {modo === 'register' && (
-            <div>
-              <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
-                Nombre del negocio
-              </label>
-              <input
-                type="text"
-                value={negocio}
-                onChange={e => setNegocio(e.target.value)}
-                placeholder="Ej: Bar El Rincón"
-                required
-                className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none transition-all"
-                style={{ fontSize: 14 }}
-                onFocus={e => (e.target.style.borderColor = '#3B72E0')}
-                onBlur={e => (e.target.style.borderColor = '')}
-              />
-            </div>
+            <>
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
+                  Nombre del negocio
+                </label>
+                <input
+                  type="text"
+                  value={negocio}
+                  onChange={e => setNegocio(e.target.value)}
+                  placeholder="Ej: Bar El Rincón"
+                  required
+                  className={inputCls}
+                  onFocus={e => (e.target.style.borderColor = '#3B72E0')}
+                  onBlur={e => (e.target.style.borderColor = '')}
+                />
+              </div>
+              {inviteEnabled && (
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
+                    Código de invitación
+                  </label>
+                  <input
+                    type="text"
+                    value={inviteCode}
+                    onChange={e => setInviteCode(e.target.value)}
+                    placeholder="Código recibido del administrador"
+                    required
+                    className={inputCls}
+                    onFocus={e => (e.target.style.borderColor = '#3B72E0')}
+                    onBlur={e => (e.target.style.borderColor = '')}
+                  />
+                </div>
+              )}
+            </>
           )}
 
           <div>
@@ -116,7 +147,7 @@ export default function LoginPage() {
               onChange={e => setEmail(e.target.value)}
               placeholder="vos@negocio.com"
               required
-              className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none transition-all"
+              className={inputCls}
               onFocus={e => (e.target.style.borderColor = '#3B72E0')}
               onBlur={e => (e.target.style.borderColor = '')}
             />
@@ -130,7 +161,7 @@ export default function LoginPage() {
               onChange={e => setPassword(e.target.value)}
               placeholder="••••••••"
               required
-              className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none transition-all"
+              className={inputCls}
               onFocus={e => (e.target.style.borderColor = '#3B72E0')}
               onBlur={e => (e.target.style.borderColor = '')}
             />
@@ -151,13 +182,17 @@ export default function LoginPage() {
             {cargando ? 'Cargando...' : modo === 'login' ? 'Ingresar' : 'Crear cuenta'}
           </button>
 
-          <button
-            type="button"
-            onClick={() => { setModo(m => m === 'register' ? 'login' : 'register'); setError('') }}
-            className="text-gray-500 hover:text-gray-700 text-sm text-center transition-colors"
-          >
-            {modo === 'login' ? '¿Primera vez? Crear una cuenta' : '¿Ya tenés cuenta? Iniciar sesión'}
-          </button>
+          {puedeRegistrarse && (
+            <button
+              type="button"
+              onClick={() => { setModo(m => m === 'register' ? 'login' : 'register'); setError('') }}
+              className="text-gray-500 hover:text-gray-700 text-sm text-center transition-colors"
+            >
+              {modo === 'login'
+                ? (inviteEnabled ? '¿Nuevo negocio? Crear una cuenta' : '¿Primera vez? Crear una cuenta')
+                : '¿Ya tenés cuenta? Iniciar sesión'}
+            </button>
+          )}
         </form>
       </div>
     </div>

@@ -43,7 +43,9 @@ type DatosFacturaPDF struct {
 	Total    float64
 
 	// Pago
-	MetodoPago string
+	MontoEfectivo  float64
+	MontoTarjeta   float64
+	MontoBilletera float64
 
 	// AFIP
 	CAE    string
@@ -266,14 +268,25 @@ func Generar(d DatosFacturaPDF) ([]byte, error) {
 		f.Ln(-1)
 	}
 
-	// Forma de pago — no exigido por ARCA en este bloque, pero útil para el
-	// cliente; el detalle oficial de impuestos va en el bloque de totales.
+	// Forma de pago — una línea por método con monto > 0
+	type pagoLine struct{ label string; monto float64 }
+	pagos := []pagoLine{
+		{"Efectivo", d.MontoEfectivo},
+		{"Tarjeta", d.MontoTarjeta},
+		{"Billetera Digital", d.MontoBilletera},
+	}
 	y = f.GetY() + 3
-	f.SetXY(lm, y)
-	f.SetFont("Arial", "B", 9)
-	f.CellFormat(35, 6, "Forma de pago:", "", 0, "L", false, 0, "")
-	f.SetFont("Arial", "", 9)
-	f.CellFormat(pageW-35, 6, tr(metodoPagoLabel(d.MetodoPago)), "", 1, "L", false, 0, "")
+	for _, p := range pagos {
+		if p.monto <= 0 {
+			continue
+		}
+		f.SetXY(lm, y)
+		f.SetFont("Arial", "B", 9)
+		f.CellFormat(35, 6, tr(p.label+":"), "", 0, "L", false, 0, "")
+		f.SetFont("Arial", "", 9)
+		f.CellFormat(pageW-35, 6, "$"+formatNum(p.monto), "", 1, "L", false, 0, "")
+		y = f.GetY()
+	}
 
 	// ── TOTALES (formato ARCA: desglose de IVA por alícuota) ───────────
 	ivaPorAlicuota := map[float64]float64{}
@@ -422,15 +435,3 @@ func tipoComp(letra string) string {
 	}
 }
 
-func metodoPagoLabel(m string) string {
-	switch strings.ToUpper(m) {
-	case "EFECTIVO":
-		return "Efectivo"
-	case "TARJETA":
-		return "Tarjeta"
-	case "BILLETERA":
-		return "Billetera Digital"
-	default:
-		return m
-	}
-}

@@ -33,6 +33,8 @@ type ResumenCierre struct {
 
 // CierreCaja maneja GET /api/reportes/cierre
 func (h *ReportesHandler) CierreCaja(c *gin.Context) {
+	empresaID := getEmpresaID(c)
+
 	fechaStr := c.Query("fecha")
 	var fecha time.Time
 	var err error
@@ -50,12 +52,10 @@ func (h *ReportesHandler) CierreCaja(c *gin.Context) {
 	inicio, fin := rangoDelDia(fecha)
 	var resumen ResumenCierre
 
-	// Conteos por tipo
-	h.db.Model(&models.Venta{}).Where("created_at >= ? AND created_at < ?", inicio, fin).Count(&resumen.TotalVentas)
-	h.db.Model(&models.Venta{}).Where("created_at >= ? AND created_at < ? AND tipo = ?", inicio, fin, models.TipoTicket).Count(&resumen.TotalTickets)
-	h.db.Model(&models.Venta{}).Where("created_at >= ? AND created_at < ? AND tipo = ?", inicio, fin, models.TipoFactura).Count(&resumen.TotalFacturas)
+	h.db.Model(&models.Venta{}).Where("empresa_id = ? AND created_at >= ? AND created_at < ?", empresaID, inicio, fin).Count(&resumen.TotalVentas)
+	h.db.Model(&models.Venta{}).Where("empresa_id = ? AND created_at >= ? AND created_at < ? AND tipo = ?", empresaID, inicio, fin, models.TipoTicket).Count(&resumen.TotalTickets)
+	h.db.Model(&models.Venta{}).Where("empresa_id = ? AND created_at >= ? AND created_at < ? AND tipo = ?", empresaID, inicio, fin, models.TipoFactura).Count(&resumen.TotalFacturas)
 
-	// Totales monetarios: JOIN ventas ↔ venta_items
 	type montos struct {
 		MontoTotal float64
 		MontoIVA   float64
@@ -67,26 +67,28 @@ func (h *ReportesHandler) CierreCaja(c *gin.Context) {
 			COALESCE(SUM(vi.iva),   0) AS monto_iva
 		FROM ventas v
 		JOIN venta_items vi ON vi.venta_id = v.id
-		WHERE v.created_at >= ? AND v.created_at < ?`, inicio, fin).Scan(&m)
+		WHERE v.empresa_id = ? AND v.created_at >= ? AND v.created_at < ?`, empresaID, inicio, fin).Scan(&m)
 
 	resumen.MontoTotal = m.MontoTotal
 	resumen.MontoIVA = m.MontoIVA
 
-	// Por método de pago
-	scanMetodo := func(metodo models.MetodoPago) float64 {
-		var total float64
-		h.db.Raw(`
-			SELECT COALESCE(SUM(vi.total), 0)
-			FROM ventas v
-			JOIN venta_items vi ON vi.venta_id = v.id
-			WHERE v.created_at >= ? AND v.created_at < ? AND v.metodo_pago = ?`,
-			inicio, fin, metodo).Scan(&total)
-		return total
+	type montosPago struct {
+		Efectivo  float64
+		Tarjeta   float64
+		Billetera float64
 	}
+	var mp montosPago
+	h.db.Raw(`
+		SELECT
+			COALESCE(SUM(monto_efectivo),  0) AS efectivo,
+			COALESCE(SUM(monto_tarjeta),   0) AS tarjeta,
+			COALESCE(SUM(monto_billetera), 0) AS billetera
+		FROM ventas
+		WHERE empresa_id = ? AND created_at >= ? AND created_at < ?`, empresaID, inicio, fin).Scan(&mp)
 
-	resumen.PorMetodoPago.Efectivo  = scanMetodo(models.PagoEfectivo)
-	resumen.PorMetodoPago.Tarjeta   = scanMetodo(models.PagoTarjeta)
-	resumen.PorMetodoPago.Billetera = scanMetodo(models.PagoBilletera)
+	resumen.PorMetodoPago.Efectivo = mp.Efectivo
+	resumen.PorMetodoPago.Tarjeta = mp.Tarjeta
+	resumen.PorMetodoPago.Billetera = mp.Billetera
 
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": resumen})
 }

@@ -15,21 +15,22 @@ const (
 )
 
 type Factura struct {
-	ID             uuid.UUID     `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
+	ID       uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
 	// uniqueIndex: la relación con ventas es 1:1 — dos facturas para la misma
 	// venta serían un bug (doble CAE/doble email); el índice además acelera los
 	// First(&factura, "venta_id = ?") del worker y los pendientes.
-	VentaID        uuid.UUID     `gorm:"type:uuid;not null;uniqueIndex:idx_facturas_venta_id" json:"venta_id"`
-	Venta          Venta         `gorm:"foreignKey:VentaID" json:"-"`
+	VentaID      uuid.UUID     `gorm:"type:uuid;not null;uniqueIndex:idx_facturas_venta_id" json:"venta_id"`
+	EmpresaID    uuid.UUID     `gorm:"type:uuid;index" json:"empresa_id"`
+	Venta        Venta         `gorm:"foreignKey:VentaID" json:"-"`
 	RazonSocial  string        `gorm:"column:razon_social;not null" json:"razon_social"`
 	CUITCliente  string        `gorm:"column:cuit_cliente;not null" json:"cuit_cliente"`
 	EmailCliente string        `gorm:"column:email_cliente;not null" json:"email_cliente"`
-	CAE            string        `json:"cae,omitempty"`
-	CAEVto         *time.Time    `json:"cae_vto,omitempty"`
-	Estado         EstadoFactura `gorm:"default:'PENDIENTE'" json:"estado"`
-	PDFPath        string        `json:"pdf_path,omitempty"`
-	EmailEnviado   bool          `gorm:"default:false" json:"email_enviado"`
-	CreatedAt      time.Time     `json:"created_at"`
+	CAE          string        `json:"cae,omitempty"`
+	CAEVto       *time.Time    `json:"cae_vto,omitempty"`
+	Estado       EstadoFactura `gorm:"default:'PENDIENTE'" json:"estado"`
+	PDFPath      string        `json:"pdf_path,omitempty"`
+	EmailEnviado bool          `gorm:"default:false" json:"email_enviado"`
+	CreatedAt    time.Time     `json:"created_at"`
 }
 
 func (Factura) TableName() string { return "facturas" }

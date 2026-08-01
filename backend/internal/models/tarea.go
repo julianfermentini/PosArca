@@ -25,6 +25,7 @@ const (
 type TareaPendiente struct {
 	ID          uuid.UUID   `gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	VentaID     uuid.UUID   `gorm:"type:uuid;not null;index"`
+	EmpresaID   uuid.UUID   `gorm:"type:uuid;index"`
 	Tipo        TipoTarea   `gorm:"not null"`
 	Estado      EstadoTarea `gorm:"not null;default:'PENDIENTE';index"`
 	Intentos    int         `gorm:"not null;default:0"`

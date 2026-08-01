@@ -1,12 +1,14 @@
 import { create } from 'zustand'
-import type { ItemCarrito, MetodoPago, ItemRequest } from '../types'
+import type { ItemCarrito, ItemRequest } from '../types'
 import { calcularIVA, calcularTotal, calcularNeto } from '../lib/utils'
 
 const newId = () => crypto.randomUUID()
 
 interface VentaState {
   carrito: ItemCarrito[]
-  metodoPago: MetodoPago | null
+  montoEfectivo: number
+  montoTarjeta: number
+  montoBilletera: number
   descripcionActual: string
   precioActual: string
 
@@ -18,17 +20,22 @@ interface VentaState {
   incrementarItem: (id: string) => void
   decrementarItem: (id: string) => void
   limpiarCarrito: () => void
-  setMetodoPago: (metodo: MetodoPago) => void
+  setMontoEfectivo: (monto: number) => void
+  setMontoTarjeta: (monto: number) => void
+  setMontoBilletera: (monto: number) => void
 
   getSubtotal: () => number
   getIVA: () => number
   getTotal: () => number
+  getSumaPagos: () => number
   getItemsParaAPI: () => ItemRequest[]
 }
 
 export const useVentaStore = create<VentaState>((set, get) => ({
   carrito: [],
-  metodoPago: null,
+  montoEfectivo: 0,
+  montoTarjeta: 0,
+  montoBilletera: 0,
   descripcionActual: '',
   precioActual: '',
 
@@ -91,9 +98,11 @@ export const useVentaStore = create<VentaState>((set, get) => ({
     })),
 
   limpiarCarrito: () =>
-    set({ carrito: [], metodoPago: null, descripcionActual: '', precioActual: '' }),
+    set({ carrito: [], montoEfectivo: 0, montoTarjeta: 0, montoBilletera: 0, descripcionActual: '', precioActual: '' }),
 
-  setMetodoPago: (metodo) => set({ metodoPago: metodo }),
+  setMontoEfectivo:  (monto) => set({ montoEfectivo: monto }),
+  setMontoTarjeta:   (monto) => set({ montoTarjeta: monto }),
+  setMontoBilletera: (monto) => set({ montoBilletera: monto }),
 
   getSubtotal: () =>
     get().carrito.reduce((acc, item) => acc + item.precio_neto * item.cantidad, 0),
@@ -101,6 +110,11 @@ export const useVentaStore = create<VentaState>((set, get) => ({
   getIVA: () => calcularIVA(get().getSubtotal()),
 
   getTotal: () => calcularTotal(get().getSubtotal()),
+
+  getSumaPagos: () => {
+    const { montoEfectivo, montoTarjeta, montoBilletera } = get()
+    return montoEfectivo + montoTarjeta + montoBilletera
+  },
 
   // Una línea por producto, con cantidad — el backend guarda una fila por línea
   getItemsParaAPI: () =>

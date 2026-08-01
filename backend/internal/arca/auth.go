@@ -11,7 +11,6 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"os"
 	"sync"
 	"time"
 
@@ -59,30 +58,50 @@ type tokenCache struct {
 	expiration time.Time
 }
 
-var cache = &tokenCache{}
+// caches almacena un tokenCache por CUIT para soportar múltiples empresas.
+var caches struct {
+	sync.Mutex
+	m map[int64]*tokenCache
+}
+
+func init() {
+	caches.m = make(map[int64]*tokenCache)
+}
+
+func getCacheForCUIT(cuit int64) *tokenCache {
+	caches.Lock()
+	defer caches.Unlock()
+	if c, ok := caches.m[cuit]; ok {
+		return c
+	}
+	c := &tokenCache{}
+	caches.m[cuit] = c
+	return c
+}
 
 const mockToken = "MOCK_TOKEN"
 const mockSign  = "MOCK_SIGN"
 
-// EsMockMode devuelve true si los certs no existen y el entorno es testing.
-func EsMockMode(certPath, keyPath, env string) bool {
+// EsMockMode devuelve true si los certificados no están configurados y el entorno es testing.
+func EsMockMode(certPEM, keyPEM, env string) bool {
 	if env == "produccion" {
 		return false
 	}
-	_, errCert := os.Stat(certPath)
-	_, errKey  := os.Stat(keyPath)
-	return os.IsNotExist(errCert) || os.IsNotExist(errKey)
+	return certPEM == "" || keyPEM == ""
 }
 
-// GetToken devuelve el token vigente o renueva si expiró. El token vive en la base
-// (tabla arca_token_cache), compartido entre instancias; el cache en memoria es solo
-// una optimización para no pegarle a la base en cada solicitud de CAE.
-func GetToken(ctx context.Context, db *gorm.DB, cuit int64, certPath, keyPath, env string) (token, sign string, err error) {
-	if EsMockMode(certPath, keyPath, env) {
-		slog.Warn("ARCA mock activo — certs no encontrados, usando datos falsos para testing")
+// GetToken devuelve el token vigente o renueva si expiró. Acepta el contenido PEM
+// de los certificados (no rutas a archivos), lo que permite multi-tenant: cada
+// empresa tiene sus propios certs guardados en la base de datos.
+// El token vive también en la base (tabla arca_token_cache), compartido entre
+// instancias; el cache en memoria es una optimización por CUIT.
+func GetToken(ctx context.Context, db *gorm.DB, cuit int64, certPEM, keyPEM, env string) (token, sign string, err error) {
+	if EsMockMode(certPEM, keyPEM, env) {
+		slog.Warn("ARCA mock activo — certs no configurados, usando datos falsos para testing")
 		return mockToken, mockSign, nil
 	}
 
+	cache := getCacheForCUIT(cuit)
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
 
@@ -95,8 +114,8 @@ func GetToken(ctx context.Context, db *gorm.DB, cuit int64, certPath, keyPath, e
 		return t, s, nil
 	}
 
-	slog.Info("renovando token ARCA/AFIP")
-	token, sign, err = login(ctx, cuit, certPath, keyPath, env)
+	slog.Info("renovando token ARCA/AFIP", "cuit", cuit)
+	token, sign, err = login(ctx, cuit, certPEM, keyPEM, env)
 	if err != nil {
 		return "", "", fmt.Errorf("login AFIP: %w", err)
 	}
@@ -110,13 +129,13 @@ func GetToken(ctx context.Context, db *gorm.DB, cuit int64, certPath, keyPath, e
 	return token, sign, nil
 }
 
-func login(ctx context.Context, cuit int64, certPath, keyPath, env string) (string, string, error) {
+func login(ctx context.Context, _ int64, certPEM, keyPEM, env string) (string, string, error) {
 	tra, err := buildTRA()
 	if err != nil {
 		return "", "", fmt.Errorf("build TRA: %w", err)
 	}
 
-	cms, err := signTRA(tra, certPath, keyPath)
+	cms, err := signTRA(tra, certPEM, keyPEM)
 	if err != nil {
 		return "", "", fmt.Errorf("firmar TRA: %w", err)
 	}
@@ -142,17 +161,10 @@ func buildTRA() ([]byte, error) {
 	return xml.MarshalIndent(tra, "", "  ")
 }
 
-func signTRA(tra []byte, certPath, keyPath string) (string, error) {
-	certPEM, err := os.ReadFile(certPath)
-	if err != nil {
-		return "", fmt.Errorf("leer certificado: %w", err)
-	}
-	keyPEM, err := os.ReadFile(keyPath)
-	if err != nil {
-		return "", fmt.Errorf("leer clave privada: %w", err)
-	}
-
-	certBlock, _ := pem.Decode(certPEM)
+// signTRA firma el TRA usando el contenido PEM de cert y clave privada directamente,
+// sin leer archivos del sistema — necesario para entornos PaaS (Railway) y multi-tenant.
+func signTRA(tra []byte, certPEM, keyPEM string) (string, error) {
+	certBlock, _ := pem.Decode([]byte(certPEM))
 	if certBlock == nil {
 		return "", fmt.Errorf("certificado PEM inválido")
 	}
@@ -161,7 +173,7 @@ func signTRA(tra []byte, certPath, keyPath string) (string, error) {
 		return "", fmt.Errorf("parsear certificado: %w", err)
 	}
 
-	keyBlock, _ := pem.Decode(keyPEM)
+	keyBlock, _ := pem.Decode([]byte(keyPEM))
 	if keyBlock == nil {
 		return "", fmt.Errorf("clave privada PEM inválida")
 	}

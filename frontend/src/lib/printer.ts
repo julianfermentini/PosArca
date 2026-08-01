@@ -88,7 +88,9 @@ export interface DatosTicketFront {
   subtotal:           number
   iva:                number
   total:              number
-  metodoPago:         string
+  montoEfectivo:      number
+  montoTarjeta:       number
+  montoBilletera:     number
   cae:                string
   caeVto:             string
   // Payload base64 del QR ARCA, ya armado por el backend con el número de
@@ -175,10 +177,15 @@ export function buildTicketBytes(d: DatosTicketFront): Uint8Array {
 
   // ── TOTAL + Pago ──────────────────────────────────────────────────────────────
   enc.bold(true).twoCol('TOTAL', `$ ${$(d.total)}`, W).bold(false)
-  const pagoLabel: Record<string, string> = {
-    EFECTIVO: 'EFECTIVO', TARJETA: 'TARJETA', BILLETERA: 'BILLETERA DIGITAL',
+  const pagos = [
+    { label: 'EFECTIVO',         monto: d.montoEfectivo },
+    { label: 'TARJETA',          monto: d.montoTarjeta },
+    { label: 'BILLETERA DIGITAL', monto: d.montoBilletera },
+  ].filter(p => p.monto > 0)
+  if (pagos.length > 0) {
+    enc.line('FORMA DE PAGO:')
+    for (const p of pagos) enc.twoCol(p.label, `$ ${$(p.monto)}`, W)
   }
-  enc.line(`FORMA DE PAGO: ${pagoLabel[d.metodoPago] ?? d.metodoPago}`)
   if (d.defensaConsumidor) enc.line(`ORIENTACION AL CONSUMIDOR ${d.defensaConsumidor}`)
 
   // ── Autorización ARCA + QR ────────────────────────────────────────────────────
@@ -217,7 +224,9 @@ export interface DatosTicketNoFiscal {
   subtotal:           number
   iva:                number
   total:              number
-  metodoPago:         string
+  montoEfectivo:      number
+  montoTarjeta:       number
+  montoBilletera:     number
   // Overrides para copia / reimpresión
   titulo?:     string   // reemplaza "** TICKET NO FISCAL **"
   subtitulo?:  string   // ej. "Nº T. 0001-00000042"
@@ -282,10 +291,15 @@ export function buildTicketNoFiscalBytes(d: DatosTicketNoFiscal): Uint8Array {
   enc.bold(true).twoCol('TOTAL', $(d.total), W).bold(false)
 
   // Pago
-  const pagoLabel: Record<string, string> = {
-    EFECTIVO: 'Efectivo', TARJETA: 'Tarjeta', BILLETERA: 'Billetera Digital',
+  const pagosNF = [
+    { label: 'Efectivo',          monto: d.montoEfectivo },
+    { label: 'Tarjeta',           monto: d.montoTarjeta },
+    { label: 'Billetera Digital', monto: d.montoBilletera },
+  ].filter(p => p.monto > 0)
+  enc.lf(1)
+  if (pagosNF.length > 0) {
+    for (const p of pagosNF) enc.twoCol(p.label, $(p.monto), W)
   }
-  enc.lf(1).twoCol(pagoLabel[d.metodoPago] ?? d.metodoPago, $(d.total), W)
 
   enc.lf(1).sep(W)
   enc.center()

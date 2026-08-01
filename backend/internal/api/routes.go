@@ -9,8 +9,6 @@ import (
 	"pos-fiscal/internal/middleware"
 )
 
-// SetupRouter arma las rutas. El worker ya encapsula el cliente de email, así
-// que los handlers solo dependen de él para los efectos secundarios.
 func SetupRouter(db *gorm.DB, cfg *config.Config, worker *handlers.Worker) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Logger(), gin.Recovery())
@@ -19,10 +17,16 @@ func SetupRouter(db *gorm.DB, cfg *config.Config, worker *handlers.Worker) *gin.
 	api := r.Group("/api")
 	{
 		// Rutas públicas
-		auth := handlers.NuevoAuthHandler(db, cfg.JWTSecret)
+		auth := handlers.NuevoAuthHandler(db, cfg.JWTSecret, cfg.InviteCode)
 		api.POST("/auth/register", auth.Register)
 		api.POST("/auth/login", auth.Login)
 		api.GET("/auth/status", auth.HasUsers)
+
+		// Rutas de administración (protegidas por X-Admin-Secret, no por JWT)
+		admin := handlers.NuevoAdminHandler(db, cfg.AdminSecret)
+		api.POST("/admin/crear-cuenta", admin.CrearCuenta)
+		api.GET("/admin/cuentas", admin.ListarCuentas)
+		api.POST("/admin/reset-password", admin.ResetPassword)
 
 		api.GET("/health", func(c *gin.Context) {
 			c.JSON(200, gin.H{"status": "ok"})
@@ -32,19 +36,19 @@ func SetupRouter(db *gorm.DB, cfg *config.Config, worker *handlers.Worker) *gin.
 		protected := api.Group("/")
 		protected.Use(middleware.AuthRequired(cfg.JWTSecret))
 		{
-			ventas := handlers.NuevoVentasHandler(db, cfg, worker)
+			ventas := handlers.NuevoVentasHandler(db, worker)
 			protected.POST("/ventas", ventas.Crear)
 			protected.GET("/ventas", ventas.Listar)
 			protected.GET("/ventas/dias", ventas.DiasConVentas)
 
-			facturas := handlers.NuevoFacturasHandler(db, cfg, worker)
+			facturas := handlers.NuevoFacturasHandler(db, worker)
 			protected.POST("/facturas", facturas.Crear)
 			protected.GET("/facturas", facturas.Listar)
 
 			reportes := handlers.NuevoReportesHandler(db)
 			protected.GET("/reportes/cierre", reportes.CierreCaja)
 
-			syncH := handlers.NuevoSyncHandler(db, cfg, worker)
+			syncH := handlers.NuevoSyncHandler(db, worker)
 			protected.POST("/sync/ventas", syncH.SincronizarVentas)
 
 			pendientes := handlers.NuevoPendientesHandler(db, worker)
@@ -52,7 +56,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config, worker *handlers.Worker) *gin.
 			protected.POST("/pendientes-cae/:id/anular", pendientes.Anular)
 			protected.PUT("/pendientes-cae/:id/corregir", pendientes.Corregir)
 
-			empresa := handlers.NuevoEmpresaHandler(db, cfg)
+			empresa := handlers.NuevoEmpresaHandler(db)
 			protected.GET("/empresa", empresa.Get)
 			protected.PUT("/empresa", empresa.Update)
 

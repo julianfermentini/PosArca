@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 )
 
 func AuthRequired(secret string) gin.HandlerFunc {
@@ -31,9 +32,17 @@ func AuthRequired(secret string) gin.HandlerFunc {
 		}
 
 		claims, _ := token.Claims.(jwt.MapClaims)
+
+		empresaIDStr, _ := claims["empresa_id"].(string)
+		if _, err := uuid.Parse(empresaIDStr); err != nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"success": false, "error": "Token inválido — re-iniciá sesión"})
+			return
+		}
+
 		c.Set("user_id", claims["sub"])
 		c.Set("email", claims["email"])
 		c.Set("negocio_nombre", claims["negocio_nombre"])
+		c.Set("empresa_id", empresaIDStr)
 		c.Next()
 	}
 }

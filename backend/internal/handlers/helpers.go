@@ -1,16 +1,20 @@
 package handlers
 
 import (
+	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	// tzdata embebe la base IANA en el binario — sin esto, time.LoadLocation
 	// puede fallar si el contenedor no trae el paquete de sistema tzdata.
 	_ "time/tzdata"
 
-	"pos-fiscal/config"
 	"pos-fiscal/internal/models"
 )
 
@@ -30,24 +34,19 @@ func cargarZonaHoraria() *time.Location {
 	return loc
 }
 
-// getEmpresaConf obtiene la configuración del negocio desde la BD.
-// Si la BD no tiene datos todavía, usa los valores del .env como fallback.
-func getEmpresaConf(db *gorm.DB, cfg *config.Config) models.ConfigEmpresa {
+// getEmpresaID extrae el empresa_id del contexto Gin (seteado por el middleware JWT).
+func getEmpresaID(c *gin.Context) uuid.UUID {
+	raw, _ := c.Get("empresa_id")
+	str, _ := raw.(string)
+	id, _ := uuid.Parse(str)
+	return id
+}
+
+// loadEmpresa carga la ConfigEmpresa desde la base de datos para el empresa_id dado.
+func loadEmpresa(db *gorm.DB, empresaID uuid.UUID) (models.ConfigEmpresa, error) {
 	var emp models.ConfigEmpresa
-	db.First(&emp)
-	if emp.RazonSocial == "" {
-		emp.RazonSocial = cfg.NegocioNombre
-		emp.Direccion = cfg.NegocioDirec
-		emp.Telefono = cfg.NegocioTel
-		emp.CondicionIVA = cfg.NegocioIVACond
-		emp.PuntoVenta = cfg.ArcaPuntoVenta
-		emp.ArcaEnv = cfg.ArcaEnv
-	}
-	// CUIT siempre desde env var — es un dato fiscal que debe coincidir con el certificado ARCA
-	if cfg.ArcaCUIT != "" {
-		emp.CUIT = cfg.ArcaCUIT
-	}
-	return emp
+	err := db.First(&emp, "id = ?", empresaID).Error
+	return emp, err
 }
 
 // rangoDelDia devuelve [inicio, fin) del día calendario de fecha, para filtrar
@@ -56,4 +55,54 @@ func getEmpresaConf(db *gorm.DB, cfg *config.Config) models.ConfigEmpresa {
 func rangoDelDia(fecha time.Time) (inicio, fin time.Time) {
 	inicio = time.Date(fecha.Year(), fecha.Month(), fecha.Day(), 0, 0, 0, 0, fecha.Location())
 	return inicio, inicio.Add(24 * time.Hour)
+}
+
+// siguienteNumero genera el próximo número secuencial de forma atómica, por empresa.
+func siguienteNumero(tx *gorm.DB, tipo models.TipoComprobante, empresaID uuid.UUID, puntoVenta int) (string, error) {
+	contador, err := contadorConLock(tx, tipo, empresaID, puntoVenta)
+	if err != nil {
+		return "", err
+	}
+	contador.Ultimo++
+	if err := tx.Save(contador).Error; err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%03d-%08d", puntoVenta, contador.Ultimo), nil
+}
+
+// contadorConLock trae (bajo SELECT ... FOR UPDATE) el contador de comprobantes para
+// (empresa, tipo, punto_venta), creándolo si no existe para esa empresa.
+func contadorConLock(tx *gorm.DB, tipo models.TipoComprobante, empresaID uuid.UUID, puntoVenta int) (*models.ComprobanteContador, error) {
+	var contador models.ComprobanteContador
+	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("empresa_id = ? AND tipo = ? AND punto_venta = ?", empresaID, tipo, puntoVenta).
+		First(&contador).Error
+
+	if err == nil {
+		return &contador, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+
+	var existentes int64
+	if err := tx.Model(&models.Venta{}).Where("tipo = ? AND empresa_id = ?", tipo, empresaID).Count(&existentes).Error; err != nil {
+		return nil, err
+	}
+	contador = models.ComprobanteContador{EmpresaID: empresaID, Tipo: tipo, PuntoVenta: puntoVenta, Ultimo: existentes}
+	if err := tx.Create(&contador).Error; err != nil {
+		return nil, err
+	}
+	return &contador, nil
+}
+
+// parseCUIT extrae los dígitos numéricos de un string CUIT (e.g. "20-12345678-9" → 20123456789).
+func parseCUIT(cuit string) int64 {
+	var result int64
+	for _, c := range cuit {
+		if c >= '0' && c <= '9' {
+			result = result*10 + int64(c-'0')
+		}
+	}
+	return result
 }
