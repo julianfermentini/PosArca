@@ -16,7 +16,11 @@ export const useAuthStore = create<AuthState>()(
       token: null,
       email: null,
       negocioNombre: null,
-      setAuth: (token, email, negocioNombre) => set({ token, email, negocioNombre }),
+      setAuth: (token, email, negocioNombre) => {
+        localStorage.removeItem('pos-productos')
+        localStorage.removeItem('pos-empresa')
+        set({ token, email, negocioNombre })
+      },
       logout: () => {
         localStorage.removeItem('pos-productos')
         localStorage.removeItem('pos-empresa')
