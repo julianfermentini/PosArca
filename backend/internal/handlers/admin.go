@@ -85,12 +85,17 @@ func (h *AdminHandler) ListarCuentas(c *gin.Context) {
 	}
 
 	var cuentas []cuentaAdmin
-	h.db.Raw(`
-		SELECT e.id, e.razon_social, e.cuit, e.punto_venta, e.arca_env, e.created_at, u.email
+	if err := h.db.Raw(`
+		SELECT e.id, e.razon_social, e.cuit, e.punto_venta, e.arca_env,
+		       COALESCE(e.created_at, u.created_at) AS created_at,
+		       u.email
 		FROM config_empresa e
 		LEFT JOIN users u ON u.empresa_id = e.id
-		ORDER BY e.created_at DESC
-	`).Scan(&cuentas)
+		ORDER BY COALESCE(e.created_at, u.created_at) DESC NULLS LAST
+	`).Scan(&cuentas).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": cuentas})
 }

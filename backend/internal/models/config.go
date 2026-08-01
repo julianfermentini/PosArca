@@ -1,6 +1,10 @@
 package models
 
-import "github.com/google/uuid"
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
 
 type ConfigEmpresa struct {
 	ID                uuid.UUID `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
@@ -17,6 +21,7 @@ type ConfigEmpresa struct {
 	IngBrutos         string    `gorm:"default:''" json:"ing_brutos"`
 	InicioActividades string    `gorm:"default:''" json:"inicio_actividades"`
 	DefensaConsumidor string    `gorm:"default:''" json:"defensa_consumidor"`
+	CreatedAt         time.Time `json:"created_at"`
 }
 
 func (ConfigEmpresa) TableName() string { return "config_empresa" }
