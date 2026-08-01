@@ -23,10 +23,17 @@ func SetupRouter(db *gorm.DB, cfg *config.Config, worker *handlers.Worker) *gin.
 		api.GET("/auth/status", auth.HasUsers)
 
 		// Rutas de administración (protegidas por X-Admin-Secret, no por JWT)
-		admin := handlers.NuevoAdminHandler(db, cfg.AdminSecret)
-		api.POST("/admin/crear-cuenta", admin.CrearCuenta)
-		api.GET("/admin/cuentas", admin.ListarCuentas)
-		api.POST("/admin/reset-password", admin.ResetPassword)
+		admin := handlers.NuevoAdminHandler(db)
+		adminGrp := api.Group("/admin")
+		adminGrp.Use(middleware.AdminRequired(cfg.AdminSecret))
+		{
+			adminGrp.POST("/crear-cuenta", admin.CrearCuenta)
+			adminGrp.GET("/cuentas", admin.ListarCuentas)
+			adminGrp.POST("/reset-password", admin.ResetPassword)
+			adminGrp.PUT("/cuentas/:id", admin.ActualizarCuenta)
+			adminGrp.PATCH("/cuentas/:id/estado", admin.CambiarEstado)
+			adminGrp.DELETE("/cuentas/:id", admin.EliminarCuenta)
+		}
 
 		api.GET("/health", func(c *gin.Context) {
 			c.JSON(200, gin.H{"status": "ok"})

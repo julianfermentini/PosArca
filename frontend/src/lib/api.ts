@@ -166,20 +166,51 @@ export const productosApi = {
 export interface CuentaAdmin {
   id: string
   razon_social: string
+  titular: string
   cuit: string
   email: string
   punto_venta: number
   arca_env: string
+  activo: boolean
+  direccion: string
+  telefono: string
+  condicion_iva: string
+  ing_brutos: string
+  inicio_actividades: string
+  defensa_consumidor: string
   created_at: string
 }
 
+export interface ActualizarCuentaPayload {
+  razon_social: string
+  titular: string
+  cuit: string
+  email: string
+  punto_venta: number
+  arca_env: string
+  direccion: string
+  telefono: string
+  condicion_iva: string
+  ing_brutos: string
+  inicio_actividades: string
+  defensa_consumidor: string
+}
+
+const adminHeaders = (secret: string) => ({ headers: { 'X-Admin-Secret': secret } })
+
 export const adminApi = {
   listarCuentas: (secret: string) =>
-    api.get<ApiResponse<CuentaAdmin[]>>('/admin/cuentas', { headers: { 'X-Admin-Secret': secret } }),
+    api.get<ApiResponse<CuentaAdmin[]>>('/admin/cuentas', adminHeaders(secret)),
   crearCuenta: (secret: string, email: string, password: string, negocio_nombre: string) =>
-    api.post<ApiResponse<{ email: string; negocio_nombre: string }>>('/admin/crear-cuenta', { email, password, negocio_nombre }, { headers: { 'X-Admin-Secret': secret } }),
+    api.post<ApiResponse<{ email: string; negocio_nombre: string }>>('/admin/crear-cuenta', { email, password, negocio_nombre }, adminHeaders(secret)),
   resetPassword: (secret: string, email: string, new_password: string) =>
-    api.post<ApiResponse<null>>('/admin/reset-password', { email, new_password }, { headers: { 'X-Admin-Secret': secret } }),
+    api.post<ApiResponse<null>>('/admin/reset-password', { email, new_password }, adminHeaders(secret)),
+  actualizarCuenta: (secret: string, id: string, payload: ActualizarCuentaPayload) =>
+    api.put<ApiResponse<null>>(`/admin/cuentas/${id}`, payload, adminHeaders(secret)),
+  cambiarEstado: (secret: string, id: string, activo: boolean) =>
+    api.patch<ApiResponse<null>>(`/admin/cuentas/${id}/estado`, { activo }, adminHeaders(secret)),
+  eliminarCuenta: (secret: string, id: string) =>
+    api.delete<ApiResponse<null>>(`/admin/cuentas/${id}`, adminHeaders(secret)),
 }
 
 export default api

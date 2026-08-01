@@ -106,6 +106,13 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
+	var activo bool
+	if err := h.db.Model(&models.ConfigEmpresa{}).
+		Select("activo").Where("id = ?", user.EmpresaID).Scan(&activo).Error; err != nil || !activo {
+		c.JSON(http.StatusForbidden, gin.H{"success": false, "error": "Cuenta suspendida. Contactá al administrador."})
+		return
+	}
+
 	token, err := generarToken(user, h.jwtSecret)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "error generando token"})

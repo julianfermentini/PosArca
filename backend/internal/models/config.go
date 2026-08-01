@@ -21,6 +21,7 @@ type ConfigEmpresa struct {
 	IngBrutos         string    `gorm:"default:''" json:"ing_brutos"`
 	InicioActividades string    `gorm:"default:''" json:"inicio_actividades"`
 	DefensaConsumidor string    `gorm:"default:''" json:"defensa_consumidor"`
+	Activo            bool      `gorm:"default:true" json:"activo"`
 	CreatedAt         time.Time `json:"created_at"`
 }
 
