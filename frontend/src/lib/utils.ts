@@ -32,6 +32,11 @@ export function generarUUID(): string {
   return crypto.randomUUID()
 }
 
+// Redondeo a 2 decimales — misma regla que usa el backend para los montos.
+export function redondear(n: number): number {
+  return Math.round(n * 100) / 100
+}
+
 // El precio que ingresa el usuario ya tiene IVA incluido.
 // Estas funciones reciben precio_neto (ya calculado) como siempre.
 export function calcularIVA(precioNeto: number): number {

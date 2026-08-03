@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useVentaStore } from '../stores/ventaStore'
+import { useVentaStore, DESCUENTOS } from '../stores/ventaStore'
 import { useSyncStore } from '../stores/syncStore'
 import { useProductosStore, type Producto } from '../stores/productosStore'
 import { useEmpresaStore } from '../stores/empresaStore'
@@ -7,7 +7,6 @@ import { usePrinterStore } from '../stores/printerStore'
 import { NumericKeypad } from '../components/features/venta/NumericKeypad'
 import { ventasApi, facturasApi } from '../lib/api'
 import { formatPrecio, generarUUID, validarCUIT, formatCUIT, calcularTotal } from '../lib/utils'
-import type { VentaOffline } from '../types'
 
 type Paso = 'descripcion' | 'precio'
 
@@ -70,22 +69,30 @@ export default function VentaPage() {
     try {
       // Snapshot ÚNICO del carrito — capturado antes del primer await porque
       // mostrarExito() limpia el store. sincronizar() no toca el carrito.
-      const snapItems    = store.getItemsParaAPI()
+      const snapItems    = store.getItemsParaAPI()   // netos ya con descuento → API/ARCA
+      const snapCarrito  = store.carrito             // precios de lista → ticket
       const snapSubtotal = store.getSubtotal()
       const snapIva      = store.getIVA()
       const snapTotal    = store.getTotal()
       const snapEf       = store.montoEfectivo
       const snapTar      = store.montoTarjeta
       const snapBil      = store.montoBilletera
+      const snapDescPct  = store.descuentoPct
+      const snapDescMonto = store.getDescuentoTotal()
 
-      // Helpers derivados del snapshot — no se recalculan por rama
-      const itemsPrinter   = snapItems.map(it => ({
+      // Helpers derivados del snapshot — no se recalculan por rama.
+      // El ticket lista los ítems a precio de lista y muestra el descuento aparte,
+      // así las líneas suman el SUBTOTAL y, restado el descuento, dan el TOTAL.
+      const itemsPrinter   = snapCarrito.map(it => ({
         descripcion: it.descripcion,
         precioNeto:  it.precio_neto,
         total:       calcularTotal(it.precio_neto),
         cantidad:    it.cantidad,
       }))
-      const totalesPrinter = { subtotal: snapSubtotal, iva: snapIva, total: snapTotal }
+      const totalesPrinter = {
+        subtotal: snapSubtotal, iva: snapIva, total: snapTotal,
+        descuentoPct: snapDescPct, descuentoMonto: snapDescMonto,
+      }
       const pagosPrinter   = { montoEfectivo: snapEf, montoTarjeta: snapTar, montoBilletera: snapBil }
 
       const imprimirNoFiscalSnap = () => {
@@ -177,9 +184,12 @@ export default function VentaPage() {
   const freeColorMap: Record<string, string> = {}
   sinPrecio.forEach((p, i) => { freeColorMap[p.id] = FREE_COLORS[i % FREE_COLORS.length] })
 
-  const total = store.getTotal()
-  const neto  = store.getSubtotal()
-  const iva   = store.getIVA()
+  const total   = store.getTotal()
+  const neto    = store.getSubtotal()
+  const iva     = store.getIVA()
+  const descPct   = store.descuentoPct
+  const descNeto  = store.getDescuentoNeto()
+  const descMonto = store.getDescuentoTotal()   // descuento IVA incluido
 
   const empresaBase = {
     negocioNombre:     empresa?.razon_social ?? '',
@@ -395,6 +405,12 @@ export default function VentaPage() {
               <span>Subtotal neto</span>
               <span className="font-mono font-semibold text-gray-700">{formatPrecio(neto)}</span>
             </div>
+            {descPct > 0 && (
+              <div className="flex justify-between text-sm font-medium" style={{ color: '#0EA57A' }}>
+                <span>Descuento {descPct}%</span>
+                <span className="font-mono font-semibold">−{formatPrecio(descNeto)}</span>
+              </div>
+            )}
             <div className="flex justify-between text-gray-500 text-sm">
               <span>IVA 21%</span>
               <span className="font-mono font-semibold text-gray-700">{formatPrecio(iva)}</span>
@@ -406,8 +422,28 @@ export default function VentaPage() {
             </div>
           </div>
 
-          {/* Payment method */}
+          {/* Descuento */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <p className="text-gray-400 font-bold uppercase tracking-widest" style={{ fontSize: 10 }}>Descuento</p>
+            <select
+              value={descPct}
+              onChange={e => store.setDescuento(Number(e.target.value))}
+              className="w-full rounded-xl outline-none font-semibold text-sm transition-all touch-manipulation"
+              style={{
+                padding: '12px', cursor: 'pointer',
+                border: `1.5px solid ${descPct > 0 ? '#0EA57A' : '#E5E7EB'}`,
+                background: descPct > 0 ? '#ECFDF5' : '#fff',
+                color: descPct > 0 ? '#047857' : '#374151',
+              }}
+            >
+              {DESCUENTOS.map(d => (
+                <option key={d} value={d}>{d === 0 ? 'Sin descuento' : `${d}% de descuento`}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Payment method */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <p className="text-gray-400 font-bold uppercase tracking-widest" style={{ fontSize: 10 }}>Forma de pago</p>
 
             {!dividirPago ? (
@@ -433,7 +469,7 @@ export default function VentaPage() {
                         }}
                         className="flex-1 rounded-lg text-sm font-semibold transition-all touch-manipulation active:scale-95"
                         style={{
-                          height: 42, border: 'none', cursor: 'pointer',
+                          height: 46, border: 'none', cursor: 'pointer',
                           background: activo ? '#3B72E0' : 'transparent',
                           color: activo ? '#fff' : '#6B7280',
                           boxShadow: activo ? '0 1px 3px rgba(59,114,224,0.3)' : 'none',
@@ -452,16 +488,14 @@ export default function VentaPage() {
                     store.setMontoBilletera(0)
                     setDividirPago(true)
                   }}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, textAlign: 'right' }}
-                  className="text-xs font-medium touch-manipulation"
-                  onMouseOver={e => (e.currentTarget.style.color = '#1D4ED8')}
-                  onMouseOut={e => (e.currentTarget.style.color = '#3B72E0')}
+                  className="w-full rounded-xl font-semibold text-sm transition-all touch-manipulation active:scale-95"
+                  style={{ height: 46, border: '1.5px solid #3B72E0', background: '#fff', color: '#3B72E0', cursor: 'pointer' }}
                 >
-                  <span style={{ color: '#3B72E0' }}>Dividir pago ›</span>
+                  Dividir pago
                 </button>
               </>
             ) : (
-              <div className="rounded-xl border border-gray-100 flex flex-col" style={{ background: '#F9FAFB', padding: '12px 14px', gap: 8 }}>
+              <div className="rounded-xl border border-gray-100 flex flex-col" style={{ background: '#F9FAFB', padding: '14px', gap: 10 }}>
                 {([
                   { label: 'Efectivo',          value: store.montoEfectivo,  set: store.setMontoEfectivo },
                   { label: 'Tarjeta',           value: store.montoTarjeta,   set: store.setMontoTarjeta },
@@ -479,8 +513,8 @@ export default function VentaPage() {
                         value={value === 0 ? '' : value}
                         onChange={e => set(e.target.value === '' ? 0 : parseFloat(e.target.value) || 0)}
                         placeholder="0"
-                        className="w-full border border-gray-200 rounded-lg outline-none font-mono text-right transition-all"
-                        style={{ padding: '7px 10px', fontSize: 13 }}
+                        className="no-spin w-full border border-gray-200 rounded-lg outline-none font-mono text-right transition-all"
+                        style={{ padding: '9px 10px', fontSize: 14 }}
                         onFocus={e => (e.target.style.borderColor = '#3B72E0')}
                         onBlur={e => (e.target.style.borderColor = '')}
                       />
@@ -488,27 +522,35 @@ export default function VentaPage() {
                   </div>
                 ))}
                 <div style={{ height: 1, background: 'rgba(0,0,0,0.06)', margin: '2px 0' }} />
-                <div className="flex items-center justify-between">
-                  <button
-                    onPointerDown={e => {
-                      e.preventDefault()
-                      store.setMontoEfectivo(0)
-                      store.setMontoTarjeta(0)
-                      store.setMontoBilletera(0)
-                      setDividirPago(false)
-                    }}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: '#3B72E0' }}
-                    className="text-xs font-medium touch-manipulation"
-                  >
-                    ‹ Pago único
-                  </button>
-                  <span className="font-mono font-semibold" style={{
-                    fontSize: 13,
-                    color: Math.abs(sumaPagos - total) < 0.02 ? '#16A34A' : sumaPagos > total ? '#DC2626' : '#6B7280',
-                  }}>
-                    Restante {formatPrecio(Math.max(0, total - sumaPagos))}
-                  </span>
-                </div>
+                {/* Restante — rojo si falta, verde cuando está pago */}
+                {(() => {
+                  const balanceado = Math.abs(sumaPagos - total) < 0.02
+                  const sobra = sumaPagos - total >= 0.02
+                  return (
+                    <div className="flex items-center justify-between rounded-lg px-3 py-2"
+                      style={{ background: balanceado ? '#F0FDF4' : '#FEF2F2' }}>
+                      <span className="text-sm font-semibold" style={{ color: balanceado ? '#16A34A' : '#DC2626' }}>
+                        {balanceado ? 'Pago completo' : sobra ? 'Sobra' : 'Restante'}
+                      </span>
+                      <span className="font-mono font-black" style={{ fontSize: 16, color: balanceado ? '#16A34A' : '#DC2626' }}>
+                        {balanceado ? '✓' : formatPrecio(Math.abs(total - sumaPagos))}
+                      </span>
+                    </div>
+                  )
+                })()}
+                <button
+                  onPointerDown={e => {
+                    e.preventDefault()
+                    store.setMontoEfectivo(0)
+                    store.setMontoTarjeta(0)
+                    store.setMontoBilletera(0)
+                    setDividirPago(false)
+                  }}
+                  className="w-full rounded-xl font-semibold text-sm transition-all touch-manipulation active:scale-95"
+                  style={{ height: 44, border: '1.5px solid #D1D5DB', background: '#fff', color: '#374151', cursor: 'pointer' }}
+                >
+                  Volver a pago único
+                </button>
               </div>
             )}
           </div>
@@ -638,7 +680,7 @@ export default function VentaPage() {
                 if (!puedeEmitir) return
                 printer.imprimirNoFiscal({
                   ...empresaBase,
-                  items: store.getItemsParaAPI().map(it => ({
+                  items: store.carrito.map(it => ({
                     descripcion: it.descripcion,
                     precioNeto:  it.precio_neto,
                     total:       calcularTotal(it.precio_neto),
@@ -647,6 +689,8 @@ export default function VentaPage() {
                   subtotal:       neto,
                   iva,
                   total,
+                  descuentoPct:   descPct,
+                  descuentoMonto: descMonto,
                   montoEfectivo:  store.montoEfectivo,
                   montoTarjeta:   store.montoTarjeta,
                   montoBilletera: store.montoBilletera,
@@ -674,6 +718,10 @@ export default function VentaPage() {
           from { opacity: 0; transform: translateY(8px) scale(0.98); }
           to   { opacity: 1; transform: translateY(0) scale(1); }
         }
+        /* Sin flechas de spinner: el monto se ingresa solo por teclado */
+        .no-spin::-webkit-outer-spin-button,
+        .no-spin::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+        input.no-spin[type=number] { -moz-appearance: textfield; appearance: textfield; }
       `}</style>
       </div>{/* end inner flex */}
     </div>

@@ -88,6 +88,9 @@ export interface DatosTicketFront {
   subtotal:           number
   iva:                number
   total:              number
+  // Descuento aplicado (IVA incluido). Si descuentoPct > 0 se imprime la línea.
+  descuentoPct?:      number
+  descuentoMonto?:    number
   montoEfectivo:      number
   montoTarjeta:       number
   montoBilletera:     number
@@ -175,7 +178,11 @@ export function buildTicketBytes(d: DatosTicketFront): Uint8Array {
   }
   enc.sep(W)
 
-  // ── TOTAL + Pago ──────────────────────────────────────────────────────────────
+  // ── Descuento (opcional) + TOTAL + Pago ────────────────────────────────────────
+  if (d.descuentoPct && d.descuentoPct > 0 && d.descuentoMonto && d.descuentoMonto > 0) {
+    enc.twoCol('SUBTOTAL', `$ ${$(d.total + d.descuentoMonto)}`, W)
+    enc.twoCol(`DESCUENTO ${d.descuentoPct}%`, `-$ ${$(d.descuentoMonto)}`, W)
+  }
   enc.bold(true).twoCol('TOTAL', `$ ${$(d.total)}`, W).bold(false)
   const pagos = [
     { label: 'EFECTIVO',         monto: d.montoEfectivo },
@@ -224,6 +231,9 @@ export interface DatosTicketNoFiscal {
   subtotal:           number
   iva:                number
   total:              number
+  // Descuento aplicado (IVA incluido). Si descuentoPct > 0 se imprime la línea.
+  descuentoPct?:      number
+  descuentoMonto?:    number
   montoEfectivo:      number
   montoTarjeta:       number
   montoBilletera:     number
@@ -287,7 +297,11 @@ export function buildTicketNoFiscalBytes(d: DatosTicketNoFiscal): Uint8Array {
 
   enc.sep(W)
 
-  // TOTAL
+  // Descuento (opcional) + TOTAL
+  if (d.descuentoPct && d.descuentoPct > 0 && d.descuentoMonto && d.descuentoMonto > 0) {
+    enc.twoCol('SUBTOTAL', $(d.total + d.descuentoMonto), W)
+    enc.twoCol(`DESCUENTO ${d.descuentoPct}%`, `-${$(d.descuentoMonto)}`, W)
+  }
   enc.bold(true).twoCol('TOTAL', $(d.total), W).bold(false)
 
   // Pago

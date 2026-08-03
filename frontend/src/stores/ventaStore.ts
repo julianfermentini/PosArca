@@ -1,8 +1,11 @@
 import { create } from 'zustand'
 import type { ItemCarrito, ItemRequest } from '../types'
-import { calcularIVA, calcularTotal, calcularNeto } from '../lib/utils'
+import { calcularIVA, calcularTotal, calcularNeto, redondear } from '../lib/utils'
 
 const newId = () => crypto.randomUUID()
+
+// Descuentos disponibles en el combo (0 = sin descuento).
+export const DESCUENTOS = [0, 5, 10, 15, 20] as const
 
 interface VentaState {
   carrito: ItemCarrito[]
@@ -11,6 +14,7 @@ interface VentaState {
   montoBilletera: number
   descripcionActual: string
   precioActual: string
+  descuentoPct: number
 
   setDescripcion: (desc: string) => void
   setPrecio: (precio: string) => void
@@ -23,13 +27,22 @@ interface VentaState {
   setMontoEfectivo: (monto: number) => void
   setMontoTarjeta: (monto: number) => void
   setMontoBilletera: (monto: number) => void
+  setDescuento: (pct: number) => void
 
   getSubtotal: () => number
+  getNetoConDescuento: () => number
+  getDescuentoNeto: () => number
+  getDescuentoTotal: () => number
   getIVA: () => number
   getTotal: () => number
   getSumaPagos: () => number
   getItemsParaAPI: () => ItemRequest[]
 }
+
+// Neto unitario con el descuento aplicado, redondeado por unidad igual que el
+// backend. Es la fuente de verdad: los items se mandan con este neto, así ARCA,
+// el total y el ticket ven todos la misma base imponible reducida.
+const netoUnitConDesc = (neto: number, pct: number) => redondear(neto * (1 - pct / 100))
 
 export const useVentaStore = create<VentaState>((set, get) => ({
   carrito: [],
@@ -38,6 +51,7 @@ export const useVentaStore = create<VentaState>((set, get) => ({
   montoBilletera: 0,
   descripcionActual: '',
   precioActual: '',
+  descuentoPct: 0,
 
   setDescripcion: (desc) => set({ descripcionActual: desc }),
   setPrecio: (precio) => set({ precioActual: precio }),
@@ -98,29 +112,51 @@ export const useVentaStore = create<VentaState>((set, get) => ({
     })),
 
   limpiarCarrito: () =>
-    set({ carrito: [], montoEfectivo: 0, montoTarjeta: 0, montoBilletera: 0, descripcionActual: '', precioActual: '' }),
+    set({ carrito: [], montoEfectivo: 0, montoTarjeta: 0, montoBilletera: 0, descripcionActual: '', precioActual: '', descuentoPct: 0 }),
 
   setMontoEfectivo:  (monto) => set({ montoEfectivo: monto }),
   setMontoTarjeta:   (monto) => set({ montoTarjeta: monto }),
   setMontoBilletera: (monto) => set({ montoBilletera: monto }),
 
+  // Cambiar el descuento resetea los pagos: el total cambia y montos ya cargados
+  // quedarían desalineados.
+  setDescuento: (pct) => set({ descuentoPct: pct, montoEfectivo: 0, montoTarjeta: 0, montoBilletera: 0 }),
+
+  // Neto bruto, sin descuento — base del descuento y del "Subtotal neto".
   getSubtotal: () =>
     get().carrito.reduce((acc, item) => acc + item.precio_neto * item.cantidad, 0),
 
-  getIVA: () => calcularIVA(get().getSubtotal()),
+  // Neto ya descontado — lo que realmente se factura.
+  getNetoConDescuento: () => {
+    const pct = get().descuentoPct
+    return get().carrito.reduce((acc, item) => acc + netoUnitConDesc(item.precio_neto, pct) * item.cantidad, 0)
+  },
 
-  getTotal: () => calcularTotal(get().getSubtotal()),
+  getDescuentoNeto: () => redondear(get().getSubtotal() - get().getNetoConDescuento()),
+
+  // Descuento en pesos con IVA incluido — para la línea del ticket.
+  getDescuentoTotal: () => redondear(calcularTotal(get().getSubtotal()) - get().getTotal()),
+
+  getIVA: () => calcularIVA(get().getNetoConDescuento()),
+
+  getTotal: () => {
+    const neto = get().getNetoConDescuento()
+    return redondear(neto + calcularIVA(neto))
+  },
 
   getSumaPagos: () => {
     const { montoEfectivo, montoTarjeta, montoBilletera } = get()
     return montoEfectivo + montoTarjeta + montoBilletera
   },
 
-  // Una línea por producto, con cantidad — el backend guarda una fila por línea
-  getItemsParaAPI: () =>
-    get().carrito.map(item => ({
+  // Una línea por producto, con cantidad — el backend guarda una fila por línea.
+  // El neto ya lleva el descuento aplicado, así ARCA factura la base reducida.
+  getItemsParaAPI: () => {
+    const pct = get().descuentoPct
+    return get().carrito.map(item => ({
       descripcion: item.descripcion,
-      precio_neto: item.precio_neto,
+      precio_neto: netoUnitConDesc(item.precio_neto, pct),
       cantidad: item.cantidad,
-    })),
+    }))
+  },
 }))

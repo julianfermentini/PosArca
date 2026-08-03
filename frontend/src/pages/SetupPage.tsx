@@ -19,10 +19,14 @@ export default function SetupPage({ onComplete }: Props) {
     if (!nombre.trim()) return
     setGuardando(true)
     await guardar({
-      razon_social:  nombre.trim(),
-      direccion:     direccion.trim(),
-      telefono:      telefono.trim(),
-      condicion_iva: condIVA,
+      razon_social:       nombre.trim(),
+      titular:            '',
+      direccion:          direccion.trim(),
+      telefono:           telefono.trim(),
+      condicion_iva:      condIVA,
+      ing_brutos:         '',
+      inicio_actividades: '',
+      defensa_consumidor: '',
     })
     onComplete()
   }
