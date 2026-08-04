@@ -53,37 +53,25 @@ type resendRequest struct {
 	Attachments []resendAttachment `json:"attachments,omitempty"`
 }
 
-func (c *Cliente) EnviarFactura(ctx context.Context, destinatario string, datos DatosFactura) error {
-	fromName := c.cfg.FromName
-	if fromName == "" {
-		fromName = "PosArca Fiscal"
+// fromName es el nombre del remitente, con el default de siempre.
+func (c *Cliente) fromName() string {
+	if c.cfg.FromName != "" {
+		return c.cfg.FromName
 	}
+	return "PosArca Fiscal"
+}
+
+// from arma el remitente "Nombre <email>" con los defaults de siempre.
+func (c *Cliente) from() string {
 	fromEmail := c.cfg.FromEmail
 	if fromEmail == "" {
 		fromEmail = "onboarding@resend.dev"
 	}
+	return fmt.Sprintf("%s <%s>", c.fromName(), fromEmail)
+}
 
-	negocio := datos.NegocioNombre
-	if negocio == "" {
-		negocio = fromName
-	}
-	asunto := fmt.Sprintf("Factura N° %s — %s", datos.Numero, negocio)
-
-	payload := resendRequest{
-		From:    fmt.Sprintf("%s <%s>", fromName, fromEmail),
-		To:      []string{destinatario},
-		Subject: asunto,
-		Text:    buildCuerpo(datos),
-	}
-
-	if len(datos.PDFBytes) > 0 {
-		nombre := fmt.Sprintf("factura_%s.pdf", strings.ReplaceAll(datos.Numero, "-", "_"))
-		payload.Attachments = []resendAttachment{{
-			Filename: nombre,
-			Content:  base64.StdEncoding.EncodeToString(datos.PDFBytes),
-		}}
-	}
-
+// enviar hace el POST a Resend. Es el único lugar que habla con la API.
+func (c *Cliente) enviar(ctx context.Context, payload resendRequest) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("marshal: %w", err)
@@ -107,9 +95,46 @@ func (c *Cliente) EnviarFactura(ctx context.Context, destinatario string, datos 
 		json.NewDecoder(resp.Body).Decode(&resBody)
 		return fmt.Errorf("resend error %d: %v", resp.StatusCode, resBody)
 	}
+	return nil
+}
 
+func (c *Cliente) EnviarFactura(ctx context.Context, destinatario string, datos DatosFactura) error {
+	negocio := datos.NegocioNombre
+	if negocio == "" {
+		negocio = c.fromName()
+	}
+
+	payload := resendRequest{
+		From:    c.from(),
+		To:      []string{destinatario},
+		Subject: fmt.Sprintf("Factura N° %s — %s", datos.Numero, negocio),
+		Text:    buildCuerpo(datos),
+	}
+
+	if len(datos.PDFBytes) > 0 {
+		nombre := fmt.Sprintf("factura_%s.pdf", strings.ReplaceAll(datos.Numero, "-", "_"))
+		payload.Attachments = []resendAttachment{{
+			Filename: nombre,
+			Content:  base64.StdEncoding.EncodeToString(datos.PDFBytes),
+		}}
+	}
+
+	if err := c.enviar(ctx, payload); err != nil {
+		return err
+	}
 	slog.Info("factura enviada por email", "destinatario", destinatario, "numero", datos.Numero, "pdf", len(datos.PDFBytes) > 0)
 	return nil
+}
+
+// EnviarAlerta manda un email de texto plano a operación (avisos de sistema,
+// no comprobantes al cliente).
+func (c *Cliente) EnviarAlerta(ctx context.Context, destinatario, asunto, cuerpo string) error {
+	return c.enviar(ctx, resendRequest{
+		From:    c.from(),
+		To:      []string{destinatario},
+		Subject: asunto,
+		Text:    cuerpo,
+	})
 }
 
 func buildCuerpo(d DatosFactura) string {

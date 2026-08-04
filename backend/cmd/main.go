@@ -41,7 +41,7 @@ func main() {
 
 	workerCtx, cancelWorker := context.WithCancel(context.Background())
 	defer cancelWorker()
-	worker := handlers.NuevoWorker(database, emailCli)
+	worker := handlers.NuevoWorker(database, emailCli, cfg.AlertEmail)
 	go worker.Iniciar(workerCtx, 5*time.Second)
 
 	router := api.SetupRouter(database, cfg, worker)

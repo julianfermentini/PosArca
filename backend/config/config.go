@@ -11,8 +11,6 @@ import (
 
 type Config struct {
 	DatabaseURL     string // PostgreSQL DSN para GORM
-	SupabaseURL     string
-	SupabaseKey     string
 	ArcaCUIT        string // solo para migración inicial; multi-tenant usa DB
 	ArcaCertContent string // PEM del certificado; se seedea en DB al arrancar
 	ArcaKeyContent  string // PEM de la clave privada; se seedea en DB al arrancar
@@ -30,6 +28,7 @@ type Config struct {
 	CORSOrigins     []string
 	InviteCode      string // requerido para nuevos registros; vacío = modo legacy (1 sola cuenta)
 	AdminSecret     string // si está seteado, habilita POST /admin/crear-cuenta
+	AlertEmail      string // destino de alertas de operación (CAE trabado); vacío = sin alertas
 }
 
 func Load() *Config {
@@ -46,8 +45,6 @@ func Load() *Config {
 
 	return &Config{
 		DatabaseURL:     mustGetEnv("DATABASE_URL"),
-		SupabaseURL:     getEnv("SUPABASE_URL", ""),
-		SupabaseKey:     getEnv("SUPABASE_KEY", ""),
 		ArcaCUIT:        getEnv("ARCA_CUIT", ""),
 		ArcaCertContent: certContent,
 		ArcaKeyContent:  keyContent,
@@ -65,6 +62,7 @@ func Load() *Config {
 		CORSOrigins:    parseOrigins(getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:5173")),
 		InviteCode:     getEnv("INVITE_CODE", ""),
 		AdminSecret:    getEnv("ADMIN_SECRET", ""),
+		AlertEmail:     getEnv("ALERT_EMAIL", ""),
 	}
 }
 

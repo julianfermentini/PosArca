@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,6 +22,9 @@ const (
 	maxIntentosTarea = 5
 	maxIntentosCAE   = 288
 	timeoutCAE       = 12 * time.Second
+
+	alertaTrasIntentos = 5                // tareas de CAE con >= N intentos se consideran trabadas
+	alertaThrottle     = 30 * time.Minute // no repetir la alerta más seguido que esto
 )
 
 var errCAEBloqueadaPorOrden = errors.New("hay una venta anterior del mismo tipo todavía sin CAE")
@@ -316,14 +320,16 @@ func enviarFacturaPorEmail(db *gorm.DB, emailCli *email.Cliente, ventaID uuid.UU
 
 // Worker procesa las tareas pendientes (CAE, email) en background.
 type Worker struct {
-	db       *gorm.DB
-	emailCli *email.Cliente
-	caeMu    sync.Mutex
-	sweepMu  sync.Mutex
+	db           *gorm.DB
+	emailCli     *email.Cliente
+	alertEmail   string
+	caeMu        sync.Mutex
+	sweepMu      sync.Mutex
+	ultimaAlerta time.Time // protegido por sweepMu: chequearAlerta corre siempre dentro del sweep
 }
 
-func NuevoWorker(db *gorm.DB, emailCli *email.Cliente) *Worker {
-	return &Worker{db: db, emailCli: emailCli}
+func NuevoWorker(db *gorm.DB, emailCli *email.Cliente, alertEmail string) *Worker {
+	return &Worker{db: db, emailCli: emailCli, alertEmail: alertEmail}
 }
 
 func (w *Worker) Iniciar(ctx context.Context, intervalo time.Duration) {
@@ -364,11 +370,79 @@ func (w *Worker) procesarPendientes(ctx context.Context) {
 		w.ejecutar(ctx, t)
 	}
 
+	w.chequearAlerta(ctx)
+
 	if err := w.db.WithContext(ctx).
 		Where("estado = ? AND updated_at < ?", models.TareaEstadoHecha, time.Now().AddDate(0, 0, -30)).
 		Delete(&models.TareaPendiente{}).Error; err != nil {
 		slog.Warn("outbox: limpiar tareas hechas viejas", "err", err)
 	}
+}
+
+// chequearAlerta avisa por email si hay comprobantes que no consiguen CAE tras
+// varios intentos — la señal de que ARCA está caído, el certificado venció o el
+// punto de venta no está habilitado. Manda UN solo mail por ventana (no uno por
+// tarea, para no generar una tormenta durante un apagón de ARCA) y lo repite cada
+// alertaThrottle mientras el problema siga. Corre siempre dentro del sweep
+// (bajo sweepMu), así que el acceso a ultimaAlerta no necesita lock propio.
+func (w *Worker) chequearAlerta(ctx context.Context) {
+	if w.alertEmail == "" {
+		return // alertas deshabilitadas
+	}
+
+	var trabadas []models.TareaPendiente
+	if err := w.db.WithContext(ctx).
+		Where("tipo = ? AND estado = ? AND intentos >= ?", models.TareaObtenerCAE, models.TareaEstadoError, alertaTrasIntentos).
+		Order("created_at ASC").
+		Find(&trabadas).Error; err != nil {
+		slog.Error("outbox: consultar tareas trabadas para alerta", "err", err)
+		return
+	}
+	if len(trabadas) == 0 || time.Since(w.ultimaAlerta) < alertaThrottle {
+		return
+	}
+	// Marcamos ANTES de enviar: si el envío falla igual respetamos el throttle
+	// (el próximo intento es en alertaThrottle) en vez de reintentar cada 5s. El
+	// problema de fondo sigue siendo visible en la pantalla de Pendientes.
+	w.ultimaAlerta = time.Now()
+
+	masVieja := trabadas[0]
+	empresa, _ := loadEmpresa(w.db, masVieja.EmpresaID)
+	var venta models.Venta
+	w.db.First(&venta, "id = ?", masVieja.VentaID)
+
+	asunto, cuerpo := mensajeAlertaCAE(len(trabadas), venta, empresa.RazonSocial, masVieja)
+
+	alertCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err := w.emailCli.EnviarAlerta(alertCtx, w.alertEmail, asunto, cuerpo); err != nil {
+		slog.Error("outbox: no se pudo enviar la alerta de CAE trabado", "err", err)
+	} else {
+		slog.Warn("outbox: alerta de CAE trabado enviada", "cantidad", len(trabadas), "destino", w.alertEmail)
+	}
+}
+
+// mensajeAlertaCAE arma el asunto y el cuerpo del email de alerta. Función pura
+// (sin DB ni red) para poder testear el formato.
+func mensajeAlertaCAE(cantidad int, masVieja models.Venta, razonSocial string, tarea models.TareaPendiente) (asunto, cuerpo string) {
+	asunto = fmt.Sprintf("[PosArca] %d comprobante(s) sin CAE", cantidad)
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Hay %d comprobante(s) que no consiguen CAE de ARCA tras %d o más intentos.\n\n", cantidad, alertaTrasIntentos))
+	sb.WriteString("Causas típicas: ARCA/AFIP caído, certificado vencido, o punto de venta no habilitado.\n\n")
+	sb.WriteString("--- MÁS ANTIGUO ---\n")
+	if razonSocial != "" {
+		sb.WriteString(fmt.Sprintf("Empresa:      %s\n", razonSocial))
+	}
+	sb.WriteString(fmt.Sprintf("Venta:        %s\n", masVieja.Numero))
+	sb.WriteString(fmt.Sprintf("Intentos:     %d\n", tarea.Intentos))
+	if tarea.UltimoError != "" {
+		sb.WriteString(fmt.Sprintf("Último error: %s\n", tarea.UltimoError))
+	}
+	sb.WriteString("-------------------\n\n")
+	sb.WriteString("Revisá la pantalla de Pendientes ARCA o los logs del servidor.\n")
+	sb.WriteString(fmt.Sprintf("Esta alerta se repite cada %s mientras haya comprobantes trabados.\n", alertaThrottle))
+	return asunto, sb.String()
 }
 
 func maxIntentos(tipo models.TipoTarea) int {
