@@ -1,6 +1,8 @@
 package api
 
 import (
+	"os"
+
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
@@ -10,6 +12,13 @@ import (
 )
 
 func SetupRouter(db *gorm.DB, cfg *config.Config, worker *handlers.Worker) *gin.Engine {
+	// Gin arranca en modo debug por defecto (imprime rutas y warnings, más lento).
+	// Si nadie fijó GIN_MODE explícitamente, usamos release —el default seguro para
+	// producción—; en local se puede forzar debug con GIN_MODE=debug.
+	if _, ok := os.LookupEnv("GIN_MODE"); !ok {
+		gin.SetMode(gin.ReleaseMode)
+	}
+
 	r := gin.New()
 	// La IP del cliente la resolvemos nosotros desde X-Forwarded-For (ver
 	// middleware.RateLimit). Le decimos a Gin que no confíe en ningún proxy para
