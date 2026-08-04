@@ -11,6 +11,11 @@ import (
 
 func SetupRouter(db *gorm.DB, cfg *config.Config, worker *handlers.Worker) *gin.Engine {
 	r := gin.New()
+	// La IP del cliente la resolvemos nosotros desde X-Forwarded-For (ver
+	// middleware.RateLimit). Le decimos a Gin que no confíe en ningún proxy para
+	// que su propio ClientIP no lea un XFF spoofeable, y de paso se silencia el
+	// warning de arranque "You trusted all proxies, this is NOT safe".
+	_ = r.SetTrustedProxies(nil)
 	r.Use(gin.Logger(), gin.Recovery())
 	r.Use(corsMiddleware(cfg.CORSOrigins))
 
@@ -18,14 +23,15 @@ func SetupRouter(db *gorm.DB, cfg *config.Config, worker *handlers.Worker) *gin.
 	{
 		// Rutas públicas
 		auth := handlers.NuevoAuthHandler(db, cfg.JWTSecret, cfg.InviteCode)
-		api.POST("/auth/register", auth.Register)
-		api.POST("/auth/login", auth.Login)
+		authLimiter := middleware.RateLimit(5.0/60.0, 5) // 5 intentos/min, ráfaga de 5
+		api.POST("/auth/register", authLimiter, auth.Register)
+		api.POST("/auth/login", authLimiter, auth.Login)
 		api.GET("/auth/status", auth.HasUsers)
 
 		// Rutas de administración (protegidas por X-Admin-Secret, no por JWT)
 		admin := handlers.NuevoAdminHandler(db)
 		adminGrp := api.Group("/admin")
-		adminGrp.Use(middleware.AdminRequired(cfg.AdminSecret))
+		adminGrp.Use(middleware.RateLimit(10.0/60.0, 10), middleware.AdminRequired(cfg.AdminSecret))
 		{
 			adminGrp.POST("/crear-cuenta", admin.CrearCuenta)
 			adminGrp.GET("/cuentas", admin.ListarCuentas)
