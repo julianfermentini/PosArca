@@ -12,6 +12,16 @@ interface AuthState {
   isAuthenticated: () => boolean
 }
 
+// Limpia todo estado (en memoria y persistido) de la cuenta anterior. Borrar
+// solo la clave de localStorage no alcanza para los stores ya hidratados —
+// por eso empresaStore/ventaStore se resetean explícitamente en memoria, y
+// no solo vía removeItem.
+function resetSesion() {
+  localStorage.removeItem('pos-productos')
+  useEmpresaStore.getState().reset()
+  useVentaStore.getState().limpiarCarrito()
+}
+
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
@@ -19,17 +29,11 @@ export const useAuthStore = create<AuthState>()(
       email: null,
       negocioNombre: null,
       setAuth: (token, email, negocioNombre) => {
-        localStorage.removeItem('pos-productos')
-        localStorage.removeItem('pos-empresa')
-        useEmpresaStore.getState().reset()
-        useVentaStore.getState().limpiarCarrito()
+        resetSesion()
         set({ token, email, negocioNombre })
       },
       logout: () => {
-        localStorage.removeItem('pos-productos')
-        localStorage.removeItem('pos-empresa')
-        useEmpresaStore.getState().reset()
-        useVentaStore.getState().limpiarCarrito()
+        resetSesion()
         set({ token: null, email: null, negocioNombre: null })
       },
       isAuthenticated: () => !!get().token,
