@@ -40,7 +40,7 @@ func (h *ProductoHandler) Create(c *gin.Context) {
 	empresaID := getEmpresaID(c)
 	p := models.Producto{ID: uuid.New(), EmpresaID: empresaID, Nombre: req.Nombre, Precio: req.Precio}
 	if err := h.db.Create(&p).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+		internalError(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{"success": true, "data": p})

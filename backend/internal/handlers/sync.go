@@ -94,7 +94,7 @@ func (h *SyncHandler) procesarOffline(ctx context.Context, v VentaOffline, empre
 	}
 
 	var existente models.Venta
-	yaExiste := h.db.Where("id = ?", ventaID).First(&existente).Error == nil
+	yaExiste := h.db.Where("id = ? AND empresa_id = ?", ventaID, empresaID).First(&existente).Error == nil
 
 	if yaExiste {
 		if existente.CAE != "" {

@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"crypto/subtle"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -11,7 +12,12 @@ import (
 // middleware del grupo, ningún handler nuevo puede olvidarse el chequeo.
 func AdminRequired(secret string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if secret == "" || c.GetHeader("X-Admin-Secret") != secret {
+		header := c.GetHeader("X-Admin-Secret")
+		// ConstantTimeCompare exige igual longitud; si difieren ya no coincide,
+		// pero igual hay que llamarla con algo del mismo tamaño para no filtrar
+		// por timing cuánto midió el secreto real.
+		match := len(header) == len(secret) && subtle.ConstantTimeCompare([]byte(header), []byte(secret)) == 1
+		if secret == "" || !match {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"success": false, "error": "No autorizado"})
 			return
 		}

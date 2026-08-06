@@ -37,7 +37,10 @@ export default function VentaPage() {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const sumaPagos   = store.getSumaPagos()
-  const puedeEmitir = store.carrito.length > 0 && Math.abs(sumaPagos - store.getTotal()) < 0.02
+  // Tolerancia solo para el error de punto flotante (los montos van redondeados
+  // a centavos) — no debe ser lo bastante grande como para dar por cobrada una
+  // venta con un faltante real de centavos.
+  const puedeEmitir = store.carrito.length > 0 && Math.abs(sumaPagos - store.getTotal()) < 0.005
 
   const handleProductoClick = useCallback((producto: Producto) => {
     if (producto.precio !== null) {
@@ -524,8 +527,8 @@ export default function VentaPage() {
                 <div style={{ height: 1, background: 'rgba(0,0,0,0.06)', margin: '2px 0' }} />
                 {/* Restante — rojo si falta, verde cuando está pago */}
                 {(() => {
-                  const balanceado = Math.abs(sumaPagos - total) < 0.02
-                  const sobra = sumaPagos - total >= 0.02
+                  const balanceado = Math.abs(sumaPagos - total) < 0.005
+                  const sobra = sumaPagos - total >= 0.005
                   return (
                     <div className="flex items-center justify-between rounded-lg px-3 py-2"
                       style={{ background: balanceado ? '#F0FDF4' : '#FEF2F2' }}>

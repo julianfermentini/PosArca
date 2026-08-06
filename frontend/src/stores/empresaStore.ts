@@ -8,6 +8,7 @@ interface EmpresaStore {
   hydrated: boolean
   cargar: () => Promise<void>
   guardar: (datos: Omit<Empresa, 'id' | 'cuit' | 'punto_venta'>) => Promise<void>
+  reset: () => void
 }
 
 export const useEmpresaStore = create<EmpresaStore>()(
@@ -63,6 +64,11 @@ export const useEmpresaStore = create<EmpresaStore>()(
           }
         } catch {}
       },
+
+      // Limpia el estado en memoria al cambiar de cuenta — borrar la clave de
+      // localStorage no alcanza, porque el store ya hidratado sigue teniendo
+      // los datos de la cuenta anterior hasta que se pisan explícitamente.
+      reset: () => set({ empresa: null, configurada: false }),
     }),
     {
       name: 'pos-empresa',

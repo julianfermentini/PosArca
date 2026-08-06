@@ -96,8 +96,7 @@ func (h *FacturasHandler) Crear(c *gin.Context) {
 	})
 
 	if err != nil {
-		slog.Error("crear factura", "err", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+		internalError(c, err)
 		return
 	}
 
@@ -133,7 +132,7 @@ func (h *FacturasHandler) Listar(c *gin.Context) {
 		Preload("Venta.Items", func(db *gorm.DB) *gorm.DB {
 			return db.Order("orden ASC")
 		}).Order("created_at desc").Limit(100).Find(&facturas).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+		internalError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": facturas})

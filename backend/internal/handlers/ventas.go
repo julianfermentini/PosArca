@@ -85,8 +85,7 @@ func (h *VentasHandler) Crear(c *gin.Context) {
 	})
 
 	if err != nil {
-		slog.Error("crear venta", "err", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+		internalError(c, err)
 		return
 	}
 
@@ -157,7 +156,7 @@ func (h *VentasHandler) Listar(c *gin.Context) {
 	}
 
 	if err := query.Find(&ventas).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+		internalError(c, err)
 		return
 	}
 

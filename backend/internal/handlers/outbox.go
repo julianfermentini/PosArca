@@ -166,10 +166,10 @@ func (w *Worker) hayAnteriorSinCAE(tipo models.TipoComprobante, empresaID uuid.U
 }
 
 // AnularCAE cancela para siempre la tarea de CAE de una venta trabada.
-func (w *Worker) AnularCAE(ventaID uuid.UUID, motivo string) error {
+func (w *Worker) AnularCAE(ventaID, empresaID uuid.UUID, motivo string) error {
 	err := w.db.Transaction(func(tx *gorm.DB) error {
 		var venta models.Venta
-		if err := tx.First(&venta, "id = ?", ventaID).Error; err != nil {
+		if err := tx.First(&venta, "id = ? AND empresa_id = ?", ventaID, empresaID).Error; err != nil {
 			return fmt.Errorf("cargar venta: %w", err)
 		}
 		if venta.CAE != "" {
@@ -193,10 +193,10 @@ func (w *Worker) AnularCAE(ventaID uuid.UUID, motivo string) error {
 }
 
 // CorregirYReintentarFactura actualiza los datos del cliente y reencola el CAE.
-func (w *Worker) CorregirYReintentarFactura(ventaID uuid.UUID, razonSocial, cuit, emailAddr string) error {
+func (w *Worker) CorregirYReintentarFactura(ventaID, empresaID uuid.UUID, razonSocial, cuit, emailAddr string) error {
 	err := w.db.Transaction(func(tx *gorm.DB) error {
 		var venta models.Venta
-		if err := tx.First(&venta, "id = ?", ventaID).Error; err != nil {
+		if err := tx.First(&venta, "id = ? AND empresa_id = ?", ventaID, empresaID).Error; err != nil {
 			return fmt.Errorf("cargar venta: %w", err)
 		}
 		if venta.CAE != "" {

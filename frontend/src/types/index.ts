@@ -67,6 +67,10 @@ export interface VentaOffline {
   monto_billetera: number
   created_at: string
   estado_sync: EstadoSync
+  // Email de la cuenta que cargó la venta — evita sincronizar con el JWT de
+  // otra cuenta si alguien más inició sesión en el mismo dispositivo antes
+  // de que esta venta terminara de sincronizar.
+  cuenta_email?: string
 }
 
 export interface ResumenCierre {

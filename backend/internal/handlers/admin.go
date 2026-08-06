@@ -86,7 +86,7 @@ func (h *AdminHandler) ListarCuentas(c *gin.Context) {
 		LEFT JOIN users u ON u.empresa_id = e.id
 		ORDER BY COALESCE(e.created_at, u.created_at) DESC NULLS LAST
 	`).Scan(&cuentas).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+		internalError(c, err)
 		return
 	}
 
@@ -141,7 +141,7 @@ func (h *AdminHandler) ActualizarCuenta(c *gin.Context) {
 		return tx.Model(&models.User{}).Where("empresa_id = ?", id).Update("email", req.Email).Error
 	})
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+		internalError(c, err)
 		return
 	}
 
@@ -168,7 +168,7 @@ func (h *AdminHandler) CambiarEstado(c *gin.Context) {
 
 	if err := h.db.Model(&models.ConfigEmpresa{}).Where("id = ?", id).
 		Update("activo", req.Activo).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+		internalError(c, err)
 		return
 	}
 
@@ -206,7 +206,7 @@ func (h *AdminHandler) EliminarCuenta(c *gin.Context) {
 		return tx.Exec("DELETE FROM config_empresa WHERE id = ?", id).Error
 	})
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+		internalError(c, err)
 		return
 	}
 
@@ -236,7 +236,7 @@ func (h *AdminHandler) ResetPassword(c *gin.Context) {
 		Where("email = ?", req.Email).
 		Update("password_hash", string(hash))
 	if result.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": result.Error.Error()})
+		internalError(c, result.Error)
 		return
 	}
 	if result.RowsAffected == 0 {

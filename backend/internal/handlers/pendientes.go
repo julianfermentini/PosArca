@@ -43,7 +43,7 @@ func (h *PendientesHandler) Listar(c *gin.Context) {
 		[]models.EstadoTarea{models.TareaEstadoPendiente, models.TareaEstadoError}).
 		Order("created_at ASC").
 		Find(&tareas).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+		internalError(c, err)
 		return
 	}
 
@@ -58,7 +58,7 @@ func (h *PendientesHandler) Listar(c *gin.Context) {
 	}
 	var ventas []models.Venta
 	if err := h.db.Preload("Items").Where("id IN ?", ventaIDs).Find(&ventas).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+		internalError(c, err)
 		return
 	}
 	var facturas []models.Factura
@@ -115,7 +115,7 @@ func (h *PendientesHandler) Anular(c *gin.Context) {
 	var req anularCAERequest
 	_ = c.ShouldBindJSON(&req)
 
-	if err := h.worker.AnularCAE(ventaID, req.Motivo); err != nil {
+	if err := h.worker.AnularCAE(ventaID, getEmpresaID(c), req.Motivo); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
 		return
 	}
@@ -140,7 +140,7 @@ func (h *PendientesHandler) Corregir(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
 		return
 	}
-	if err := h.worker.CorregirYReintentarFactura(ventaID, req.RazonSocial, req.CUITCliente, req.EmailCliente); err != nil {
+	if err := h.worker.CorregirYReintentarFactura(ventaID, getEmpresaID(c), req.RazonSocial, req.CUITCliente, req.EmailCliente); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
 		return
 	}

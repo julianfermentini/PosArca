@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { contarPendientes, guardarVentaOffline, obtenerVentasPendientes, marcarSincronizada } from '../lib/offline'
 import { syncApi } from '../lib/api'
+import { useAuthStore } from './authStore'
 import type { VentaOffline } from '../types'
 
 interface SyncState {
@@ -25,12 +26,12 @@ export const useSyncStore = create<SyncState>((set, get) => ({
   },
 
   actualizarConteo: async () => {
-    const pendientes = await contarPendientes()
+    const pendientes = await contarPendientes(useAuthStore.getState().email)
     set({ pendientes })
   },
 
   guardarOffline: async (venta) => {
-    await guardarVentaOffline(venta)
+    await guardarVentaOffline(venta, useAuthStore.getState().email)
     await get().actualizarConteo()
   },
 
@@ -39,7 +40,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
     set({ sincronizando: true })
 
     try {
-      const pendientes = await obtenerVentasPendientes()
+      const pendientes = await obtenerVentasPendientes(useAuthStore.getState().email)
       if (pendientes.length === 0) return
 
       const { data } = await syncApi.sincronizar(pendientes)

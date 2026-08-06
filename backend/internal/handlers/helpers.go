@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -17,6 +18,15 @@ import (
 
 	"pos-fiscal/internal/models"
 )
+
+// internalError loguea el error real server-side (con método y ruta para
+// poder ubicarlo) y devuelve un mensaje genérico al cliente — evita filtrar
+// detalle interno de Postgres/GORM (nombres de columna, constraints, etc.)
+// en la respuesta HTTP.
+func internalError(c *gin.Context, err error) {
+	slog.Error("error interno", "method", c.Request.Method, "path", c.Request.URL.Path, "err", err)
+	c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "error interno"})
+}
 
 // zonaHoraria es la zona de referencia del negocio (Argentina) para decidir a qué
 // "día" pertenece una venta. Los query params de fecha (?fecha=, ?mes=) se

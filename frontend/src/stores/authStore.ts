@@ -1,5 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { useEmpresaStore } from './empresaStore'
+import { useVentaStore } from './ventaStore'
 
 interface AuthState {
   token: string | null
@@ -19,11 +21,15 @@ export const useAuthStore = create<AuthState>()(
       setAuth: (token, email, negocioNombre) => {
         localStorage.removeItem('pos-productos')
         localStorage.removeItem('pos-empresa')
+        useEmpresaStore.getState().reset()
+        useVentaStore.getState().limpiarCarrito()
         set({ token, email, negocioNombre })
       },
       logout: () => {
         localStorage.removeItem('pos-productos')
         localStorage.removeItem('pos-empresa')
+        useEmpresaStore.getState().reset()
+        useVentaStore.getState().limpiarCarrito()
         set({ token: null, email: null, negocioNombre: null })
       },
       isAuthenticated: () => !!get().token,

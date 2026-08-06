@@ -64,7 +64,7 @@ func (h *EmpresaHandler) Update(c *gin.Context) {
 	emp.DefensaConsumidor = req.DefensaConsumidor
 
 	if err := h.db.Save(&emp).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+		internalError(c, err)
 		return
 	}
 
