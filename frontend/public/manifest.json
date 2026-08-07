@@ -1,6 +1,6 @@
 {
-  "name": "PosArca",
-  "short_name": "PosArca",
+  "name": "posArg",
+  "short_name": "posArg",
   "description": "Sistema de ventas fiscal ARCA",
   "start_url": "/",
   "display": "standalone",

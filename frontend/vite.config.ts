@@ -7,18 +7,17 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.ico', 'apple-touch-icon.png'],
+      includeAssets: ['favicon.svg'],
       manifest: {
-        name: 'POS Fiscal',
-        short_name: 'POS',
+        name: 'posArg',
+        short_name: 'posArg',
         description: 'Punto de venta fiscal para bar/restaurante',
-        theme_color: '#2563eb',
+        theme_color: '#111827',
         background_color: '#f9fafb',
         display: 'standalone',
         orientation: 'landscape',
         icons: [
-          { src: 'pwa-192x192.png', sizes: '192x192', type: 'image/png' },
-          { src: 'pwa-512x512.png', sizes: '512x512', type: 'image/png' },
+          { src: 'favicon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any maskable' },
         ],
       },
       workbox: {
