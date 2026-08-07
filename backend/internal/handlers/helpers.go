@@ -52,6 +52,14 @@ func getEmpresaID(c *gin.Context) uuid.UUID {
 	return id
 }
 
+// getUserID extrae el user_id del contexto Gin (seteado por el middleware JWT).
+func getUserID(c *gin.Context) uuid.UUID {
+	raw, _ := c.Get("user_id")
+	str, _ := raw.(string)
+	id, _ := uuid.Parse(str)
+	return id
+}
+
 // loadEmpresa carga la ConfigEmpresa desde la base de datos para el empresa_id dado.
 func loadEmpresa(db *gorm.DB, empresaID uuid.UUID) (models.ConfigEmpresa, error) {
 	var emp models.ConfigEmpresa

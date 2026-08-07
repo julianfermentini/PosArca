@@ -3,6 +3,7 @@ import { useProductosStore } from '../stores/productosStore'
 import { useEmpresaStore } from '../stores/empresaStore'
 import { usePrinterStore } from '../stores/printerStore'
 import { formatPrecio } from '../lib/utils'
+import { authApi } from '../lib/api'
 
 const FREE_COLORS = ['#3B72E0', '#0EA57A', '#8B5CF6', '#F97316', '#EC4899', '#0EA5E9']
 
@@ -269,6 +270,102 @@ function SeccionEmpresa() {
   )
 }
 
+// ─── Cambiar contraseña ───────────────────────────────────────────────────────
+function SeccionCambiarPassword() {
+  const [actual,    setActual]    = useState('')
+  const [nueva,     setNueva]     = useState('')
+  const [confirmar, setConfirmar] = useState('')
+  const [saving,    setSaving]    = useState(false)
+  const [ok,        setOk]        = useState(false)
+  const [error,     setError]     = useState('')
+
+  const nuevaValida = nueva.length >= 6 && nueva === confirmar
+  const canSave = !!actual && nuevaValida && !saving
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!canSave) return
+    setSaving(true)
+    setError('')
+    try {
+      const { data } = await authApi.cambiarPassword(actual, nueva)
+      if (data.success) {
+        setActual(''); setNueva(''); setConfirmar('')
+        setOk(true)
+        setTimeout(() => setOk(false), 2500)
+      } else {
+        setError(data.error || 'Error desconocido')
+      }
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error
+      setError(msg || 'Error de conexión')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Card style={{ marginBottom: 16 }}>
+      <SectionTitle sub="Necesitás tu contraseña actual para poder cambiarla.">
+        Cambiar contraseña
+      </SectionTitle>
+
+      <form onSubmit={handleSave} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <div style={{ gridColumn: '1 / -1' }}>
+          <label className={labelCls} style={labelStyle}>Contraseña actual</label>
+          <input type="password" value={actual} onChange={e => { setActual(e.target.value); setError('') }}
+            autoComplete="current-password" className={inputCls} style={inputSty}
+            onFocus={onFocusBlue} onBlur={onBlurReset} />
+        </div>
+
+        <div>
+          <label className={labelCls} style={labelStyle}>Contraseña nueva</label>
+          <input type="password" value={nueva} onChange={e => { setNueva(e.target.value); setError('') }}
+            autoComplete="new-password" className={inputCls} style={inputSty}
+            onFocus={onFocusBlue} onBlur={onBlurReset} />
+        </div>
+
+        <div>
+          <label className={labelCls} style={labelStyle}>Confirmar contraseña nueva</label>
+          <input type="password" value={confirmar} onChange={e => { setConfirmar(e.target.value); setError('') }}
+            autoComplete="new-password" className={inputCls} style={inputSty}
+            onFocus={onFocusBlue} onBlur={onBlurReset} />
+        </div>
+
+        {nueva.length > 0 && nueva.length < 6 && (
+          <p className="text-xs text-amber-700" style={{ gridColumn: '1 / -1', margin: 0 }}>
+            La contraseña nueva tiene que tener al menos 6 caracteres.
+          </p>
+        )}
+        {confirmar.length > 0 && nueva !== confirmar && (
+          <p className="text-xs text-amber-700" style={{ gridColumn: '1 / -1', margin: 0 }}>
+            Las contraseñas no coinciden.
+          </p>
+        )}
+        {error && (
+          <p className="text-xs text-red-600" style={{ gridColumn: '1 / -1', margin: 0 }}>
+            {error}
+          </p>
+        )}
+
+        <div style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: 12, marginTop: 4 }}>
+          <button
+            type="submit"
+            disabled={!canSave}
+            className="font-semibold text-white rounded-xl transition-colors disabled:opacity-40"
+            style={{ padding: '10px 20px', background: '#3B72E0', border: 'none', cursor: canSave ? 'pointer' : 'not-allowed', fontSize: 14 }}
+            onMouseOver={e => { if (canSave) (e.currentTarget.style.background = '#2F5CC0') }}
+            onMouseOut={e => (e.currentTarget.style.background = '#3B72E0')}
+          >
+            {saving ? 'Guardando...' : 'Cambiar contraseña'}
+          </button>
+          {ok && <span className="text-sm font-semibold" style={{ color: '#16A34A' }}>✓ Contraseña actualizada</span>}
+        </div>
+      </form>
+    </Card>
+  )
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 export default function ConfigPage() {
   const { productos, agregar, editar, eliminar } = useProductosStore()
@@ -311,6 +408,9 @@ export default function ConfigPage() {
 
         {/* ── Datos del negocio ── */}
         <SeccionEmpresa />
+
+        {/* ── Contraseña ── */}
+        <SeccionCambiarPassword />
 
         {/* ── Impresora ── */}
         <SeccionImpresora />

@@ -129,6 +129,45 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	})
 }
 
+type CambiarPasswordRequest struct {
+	PasswordActual string `json:"password_actual" binding:"required"`
+	PasswordNueva  string `json:"password_nueva" binding:"required,min=6"`
+}
+
+// CambiarPassword permite a un usuario logueado cambiar su propia contraseña,
+// verificando primero la actual. Distinto del reset de admin (que no la pide).
+func (h *AuthHandler) CambiarPassword(c *gin.Context) {
+	var req CambiarPasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})
+		return
+	}
+
+	var user models.User
+	if err := h.db.First(&user, "id = ?", getUserID(c)).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"success": false, "error": "Usuario no encontrado"})
+		return
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.PasswordActual)); err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"success": false, "error": "La contraseña actual es incorrecta"})
+		return
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.PasswordNueva), bcrypt.DefaultCost)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "error interno"})
+		return
+	}
+
+	if err := h.db.Model(&user).Update("password_hash", string(hash)).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "no se pudo actualizar la contraseña"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true})
+}
+
 // HasUsers indica si hay usuarios y si el registro por invitación está habilitado.
 func (h *AuthHandler) HasUsers(c *gin.Context) {
 	var count int64

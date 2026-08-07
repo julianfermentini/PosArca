@@ -25,6 +25,8 @@ export const authApi = {
     api.post<ApiResponse<{ token: string; email: string; negocio_nombre: string }>>('/auth/register', { email, password, negocio_nombre, invite_code }),
   status: () =>
     api.get<ApiResponse<{ has_users: boolean; invite_enabled: boolean }>>('/auth/status'),
+  cambiarPassword: (passwordActual: string, passwordNueva: string) =>
+    api.put<ApiResponse<object>>('/auth/password', { password_actual: passwordActual, password_nueva: passwordNueva }),
 }
 
 export interface CrearVentaPayload {
