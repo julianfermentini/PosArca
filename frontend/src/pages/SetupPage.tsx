@@ -146,7 +146,7 @@ export default function SetupPage({ onComplete }: Props) {
             onMouseOver={e => { if (!guardando) (e.currentTarget.style.background = '#2F5CC0') }}
             onMouseOut={e => (e.currentTarget.style.background = '#3B72E0')}
           >
-            {guardando ? 'Guardando...' : 'Comenzar a usar PosArca →'}
+            {guardando ? 'Guardando...' : 'Comenzar a usar posArg →'}
           </button>
         </form>
 

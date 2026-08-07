@@ -74,7 +74,7 @@ export default function App() {
             >
               PA
             </span>
-            <span className="font-black text-white tracking-tight hidden sm:block" style={{ fontSize: 16 }}>PosArca</span>
+            <span className="font-black text-white tracking-tight hidden sm:block" style={{ fontSize: 16 }}>posArg</span>
           </div>
 
           {/* Desktop tabs */}

@@ -425,7 +425,7 @@ func (w *Worker) chequearAlerta(ctx context.Context) {
 // mensajeAlertaCAE arma el asunto y el cuerpo del email de alerta. Función pura
 // (sin DB ni red) para poder testear el formato.
 func mensajeAlertaCAE(cantidad int, masVieja models.Venta, razonSocial string, tarea models.TareaPendiente) (asunto, cuerpo string) {
-	asunto = fmt.Sprintf("[PosArca] %d comprobante(s) sin CAE", cantidad)
+	asunto = fmt.Sprintf("[posArg] %d comprobante(s) sin CAE", cantidad)
 
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("Hay %d comprobante(s) que no consiguen CAE de ARCA tras %d o más intentos.\n\n", cantidad, alertaTrasIntentos))

@@ -478,7 +478,7 @@ export default function AdminPage() {
             <span className="flex items-center justify-center font-black text-white text-xs"
               style={{ width: 30, height: 30, borderRadius: 8, background: '#3B72E0' }}>PA</span>
             <span className="font-black text-gray-900 tracking-tight" style={{ fontSize: 18 }}>
-              PosArca <span className="text-gray-400 font-normal">Admin</span>
+              posArg <span className="text-gray-400 font-normal">Admin</span>
             </span>
           </div>
           <form onSubmit={handleAuth} className="flex flex-col gap-4">
@@ -514,7 +514,7 @@ export default function AdminPage() {
           <span className="flex items-center justify-center font-black text-white text-xs"
             style={{ width: 28, height: 28, borderRadius: 8, background: '#3B72E0' }}>PA</span>
           <span className="font-black text-white tracking-tight" style={{ fontSize: 16 }}>
-            PosArca <span className="text-gray-400 font-normal">Admin</span>
+            posArg <span className="text-gray-400 font-normal">Admin</span>
           </span>
         </div>
         <button onClick={() => { setAutenticado(false); setSecret('') }}

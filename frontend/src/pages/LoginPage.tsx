@@ -69,7 +69,7 @@ export default function LoginPage() {
               >
                 PA
               </span>
-              <span className="font-black text-white tracking-tight" style={{ fontSize: 22 }}>PosArca</span>
+              <span className="font-black text-white tracking-tight" style={{ fontSize: 22 }}>posArg</span>
             </div>
             <p className="text-gray-300 leading-relaxed" style={{ fontSize: 15, maxWidth: 280, lineHeight: '1.65' }}>
               Punto de venta fiscal con facturación electrónica AFIP/ARCA, pensado para el mostrador.
@@ -91,14 +91,14 @@ export default function LoginPage() {
           <div className="flex items-center gap-2 mb-2 md:hidden">
             <span className="flex items-center justify-center font-black text-white text-sm"
               style={{ width: 32, height: 32, borderRadius: 9, background: '#3B72E0' }}>PA</span>
-            <span className="font-black text-gray-900 tracking-tight text-xl">PosArca</span>
+            <span className="font-black text-gray-900 tracking-tight text-xl">posArg</span>
           </div>
           <div>
             <h1 className="font-bold text-gray-900 mb-1.5" style={{ fontSize: 24 }}>
               {modo === 'register' ? 'Creá tu cuenta' : 'Bienvenido de nuevo'}
             </h1>
             <p className="text-gray-500 text-sm">
-              {modo === 'register' ? 'Configurá tu negocio en PosArca' : 'Ingresá con tu email y contraseña'}
+              {modo === 'register' ? 'Configurá tu negocio en posArg' : 'Ingresá con tu email y contraseña'}
             </p>
           </div>
 
