@@ -51,3 +51,10 @@ export function calcularTotal(precioNeto: number): number {
 export function calcularNeto(precioFinal: number): number {
   return Math.round((precioFinal / 1.21) * 100) / 100
 }
+
+// Extrae el mensaje de error que manda el backend en la respuesta de axios
+// ({success: false, error: "..."}), con un fallback para errores de red/CORS
+// que nunca llegaron a tener body (ej. servidor caído).
+export function extractError(e: unknown, fallback = 'Error desconocido'): string {
+  return (e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? fallback
+}

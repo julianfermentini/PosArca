@@ -1,11 +1,8 @@
 import { useState, useCallback } from 'react'
 import { adminApi, type CuentaAdmin, type ActualizarCuentaPayload } from '../lib/api'
+import { extractError } from '../lib/utils'
 
 // ─── utilidades ──────────────────────────────────────────────────────────────
-
-function extractError(e: unknown): string {
-  return (e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Error desconocido'
-}
 
 function formatFecha(iso: string) {
   return new Date(iso).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { authApi } from '../lib/api'
 import { useAuthStore } from '../stores/authStore'
+import { extractError } from '../lib/utils'
 
 export default function LoginPage() {
   const { setAuth } = useAuthStore()
@@ -44,8 +45,7 @@ export default function LoginPage() {
         setError(data.error || 'Error desconocido')
       }
     } catch (e: unknown) {
-      const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error
-      setError(msg || 'Error de conexión')
+      setError(extractError(e, 'Error de conexión'))
     } finally {
       setCargando(false)
     }

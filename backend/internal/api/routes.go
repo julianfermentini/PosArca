@@ -58,7 +58,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config, worker *handlers.Worker) *gin.
 		protected := api.Group("/")
 		protected.Use(middleware.AuthRequired(cfg.JWTSecret))
 		{
-			protected.PUT("/auth/password", auth.CambiarPassword)
+			protected.PUT("/auth/password", authLimiter, auth.CambiarPassword)
 
 			ventas := handlers.NuevoVentasHandler(db, worker)
 			protected.POST("/ventas", ventas.Crear)

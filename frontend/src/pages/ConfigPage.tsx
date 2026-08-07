@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useProductosStore } from '../stores/productosStore'
 import { useEmpresaStore } from '../stores/empresaStore'
 import { usePrinterStore } from '../stores/printerStore'
-import { formatPrecio } from '../lib/utils'
+import { formatPrecio, extractError } from '../lib/utils'
 import { authApi } from '../lib/api'
 
 const FREE_COLORS = ['#3B72E0', '#0EA57A', '#8B5CF6', '#F97316', '#EC4899', '#0EA5E9']
@@ -297,8 +297,7 @@ function SeccionCambiarPassword() {
         setError(data.error || 'Error desconocido')
       }
     } catch (e: unknown) {
-      const msg = (e as { response?: { data?: { error?: string } } })?.response?.data?.error
-      setError(msg || 'Error de conexión')
+      setError(extractError(e, 'Error de conexión'))
     } finally {
       setSaving(false)
     }
