@@ -1,3 +1,7 @@
+import type { Empresa } from './api'
+import type { ItemCarrito } from '../types'
+import { calcularTotal } from './utils'
+
 // ─── ESC/POS encoder mínimo para impresoras térmicas ──────────────────────────
 
 const CP1252: Record<string, number> = {
@@ -108,6 +112,31 @@ export interface DatosTicketFront {
 function fmtCuit(cuit: string): string {
   const c = cuit.replace(/\D/g, '')
   return c.length === 11 ? `${c.slice(0, 2)}-${c.slice(2, 10)}-${c.slice(10)}` : cuit
+}
+
+// Campos del negocio comunes a todo ticket (fiscal o no). El caller agrega
+// encima los campos propios de cada tipo (numero, items, totales, etc.)
+export function buildEmpresaBase(empresa: Empresa | null) {
+  return {
+    negocioNombre:     empresa?.razon_social ?? '',
+    titular:           empresa?.titular ?? '',
+    cuit:              empresa?.cuit ?? '',
+    ingBrutos:         empresa?.ing_brutos ?? '',
+    direccion:         empresa?.direccion ?? '',
+    defensaConsumidor: empresa?.defensa_consumidor ?? '',
+    condicionIVA:      empresa?.condicion_iva ?? '',
+  }
+}
+
+// Ítems del carrito en el shape que espera el ticket: precioNeto es por
+// unidad, total ya incluye IVA (calcularTotal), tal como lo imprime el ESC/POS.
+export function itemsParaTicket(carrito: ItemCarrito[]) {
+  return carrito.map(it => ({
+    descripcion: it.descripcion,
+    precioNeto:  it.precio_neto,
+    total:       calcularTotal(it.precio_neto),
+    cantidad:    it.cantidad,
+  }))
 }
 
 // ─── Genera los bytes ESC/POS del ticket fiscal (formato ARCA / RG 5614/2024) ─

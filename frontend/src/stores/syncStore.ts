@@ -4,7 +4,7 @@ import { syncApi } from '../lib/api'
 import { useAuthStore } from './authStore'
 import type { VentaOffline } from '../types'
 
-interface SyncState {
+export interface SyncState {
   online: boolean
   pendientes: number
   sincronizando: boolean

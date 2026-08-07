@@ -7,7 +7,7 @@ const newId = () => crypto.randomUUID()
 // Descuentos disponibles en el combo (0 = sin descuento).
 export const DESCUENTOS = [0, 5, 10, 15, 20] as const
 
-interface VentaState {
+export interface VentaState {
   carrito: ItemCarrito[]
   montoEfectivo: number
   montoTarjeta: number

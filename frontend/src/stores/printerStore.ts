@@ -9,7 +9,7 @@ import {
 
 type TipoConexion = 'usb' | 'bluetooth' | null
 
-interface PrinterStore {
+export interface PrinterStore {
   tipo:      TipoConexion
   nombre:    string | null
   conectado: boolean
