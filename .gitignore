@@ -23,3 +23,11 @@ frontend/.vite/
 # Misc
 .DS_Store
 *.log
+
+# Skills de agente (tooling local, no es parte de la app)
+.agents/
+.claude/
+skills-lock.json
+
+# Documentación de trabajo, no versionada
+docs/
