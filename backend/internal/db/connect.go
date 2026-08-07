@@ -119,6 +119,16 @@ END $$`).Error; err != nil {
 		return err
 	}
 
+	// FIX aislamiento multi-tenant: el índice único de ventas era global
+	// (tipo, numero), sin empresa_id — dos empresas distintas colisionaban al
+	// llegar ambas al mismo correlativo local (ej. la primera "001-00000001"
+	// de su historia). AutoMigrate ya creó el índice nuevo de 3 columnas
+	// (uniqueIndex del modelo Venta); acá sacamos el viejo, que quedó huérfano
+	// y seguiría bloqueando inserts si no se borra explícitamente.
+	if err := db.Exec(`DROP INDEX IF EXISTS idx_ventas_tipo_numero`).Error; err != nil {
+		slog.Error("no se pudo borrar el índice único global viejo de ventas", "err", err)
+	}
+
 	// Índices únicos necesarios para el funcionamiento correcto
 	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_arca_token_cache_cuit ON arca_token_cache (cuit)`).Error; err != nil {
 		slog.Error("no se pudo crear índice único de arca_token_cache", "err", err)

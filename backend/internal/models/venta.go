@@ -29,9 +29,13 @@ const (
 // valida contra sus propios registros) tienen que usar NumeroFiscal, no Numero.
 type Venta struct {
 	ID             uuid.UUID       `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id"`
-	EmpresaID      uuid.UUID       `gorm:"type:uuid;index" json:"empresa_id"`
-	Tipo           TipoComprobante `gorm:"not null;uniqueIndex:idx_ventas_tipo_numero" json:"tipo"`
-	Numero         string          `gorm:"uniqueIndex:idx_ventas_tipo_numero" json:"numero,omitempty"`
+	// La numeración (Numero) es un contador local POR EMPRESA — el índice único
+	// tiene que incluir empresa_id, si no, dos empresas distintas que lleguen al
+	// mismo correlativo (ej. las dos primeras "001-00000001" de su historia)
+	// chocan entre sí aunque sean cuentas totalmente independientes.
+	EmpresaID      uuid.UUID       `gorm:"type:uuid;index;uniqueIndex:idx_ventas_empresa_tipo_numero" json:"empresa_id"`
+	Tipo           TipoComprobante `gorm:"not null;uniqueIndex:idx_ventas_empresa_tipo_numero" json:"tipo"`
+	Numero         string          `gorm:"uniqueIndex:idx_ventas_empresa_tipo_numero" json:"numero,omitempty"`
 	NumeroFiscal   string          `gorm:"column:numero_fiscal;default:''" json:"numero_fiscal,omitempty"`
 	MetodoPago     MetodoPago      `gorm:"default:''" json:"metodo_pago,omitempty"`
 	MontoEfectivo  float64         `gorm:"default:0" json:"monto_efectivo"`
