@@ -62,7 +62,7 @@ func migrar(db *gorm.DB) error {
 	if err := db.Exec(`DO $$
 DECLARE eid uuid;
 BEGIN
-  SELECT id INTO eid FROM config_empresa LIMIT 1;
+  SELECT id INTO eid FROM config_empresa ORDER BY created_at ASC LIMIT 1;
 
   -- users
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='empresa_id') THEN
@@ -148,23 +148,23 @@ END $$`).Error; err != nil {
 		slog.Error("no se pudo reparar la PK de comprobante_contadores", "err", err)
 	}
 
-	// FIX aislamiento multi-tenant: el índice único de ventas era global
-	// (tipo, numero), sin empresa_id — dos empresas distintas colisionaban al
-	// llegar ambas al mismo correlativo local (ej. la primera "001-00000001"
-	// de su historia). AutoMigrate ya creó el índice nuevo de 3 columnas
-	// (uniqueIndex del modelo Venta); acá sacamos el viejo, que quedó huérfano
-	// y seguiría bloqueando inserts si no se borra explícitamente.
-	if err := db.Exec(`DROP INDEX IF EXISTS idx_ventas_tipo_numero`).Error; err != nil {
-		slog.Error("no se pudo borrar el índice único global viejo de ventas", "err", err)
-	}
-
-	// Mismo problema que el de arriba, pero en comprobante_contadores: además
-	// de la PK vieja (ya reparada más arriba) había un índice único aparte,
-	// también global (tipo, punto_venta) sin empresa_id, que sobrevivió a la
-	// migración a multi-tenant y seguía bloqueando el INSERT de una empresa
-	// nueva sobre el mismo (tipo, punto_venta) que ya usa otra.
+	// Además de la PK vieja (reparada arriba), comprobante_contadores tenía un
+	// índice único aparte, también global (tipo, punto_venta) sin empresa_id,
+	// que sobrevivió a la migración a multi-tenant y seguía bloqueando el
+	// INSERT de una empresa nueva sobre el mismo (tipo, punto_venta) que ya
+	// usa otra.
 	if err := db.Exec(`DROP INDEX IF EXISTS idx_comprobante_contadores_tipo_pv`).Error; err != nil {
 		slog.Error("no se pudo borrar el índice único global viejo de comprobante_contadores", "err", err)
+	}
+
+	// Mismo problema, en ventas: el índice único era global (tipo, numero),
+	// sin empresa_id — dos empresas distintas colisionaban al llegar ambas al
+	// mismo correlativo local (ej. la primera "001-00000001" de su historia).
+	// AutoMigrate ya creó el índice nuevo de 3 columnas (uniqueIndex del
+	// modelo Venta); acá sacamos el viejo, que quedó huérfano y seguiría
+	// bloqueando inserts si no se borra explícitamente.
+	if err := db.Exec(`DROP INDEX IF EXISTS idx_ventas_tipo_numero`).Error; err != nil {
+		slog.Error("no se pudo borrar el índice único global viejo de ventas", "err", err)
 	}
 
 	// Índices únicos necesarios para el funcionamiento correcto
