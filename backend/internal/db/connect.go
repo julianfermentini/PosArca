@@ -158,6 +158,15 @@ END $$`).Error; err != nil {
 		slog.Error("no se pudo borrar el índice único global viejo de ventas", "err", err)
 	}
 
+	// Mismo problema que el de arriba, pero en comprobante_contadores: además
+	// de la PK vieja (ya reparada más arriba) había un índice único aparte,
+	// también global (tipo, punto_venta) sin empresa_id, que sobrevivió a la
+	// migración a multi-tenant y seguía bloqueando el INSERT de una empresa
+	// nueva sobre el mismo (tipo, punto_venta) que ya usa otra.
+	if err := db.Exec(`DROP INDEX IF EXISTS idx_comprobante_contadores_tipo_pv`).Error; err != nil {
+		slog.Error("no se pudo borrar el índice único global viejo de comprobante_contadores", "err", err)
+	}
+
 	// Índices únicos necesarios para el funcionamiento correcto
 	if err := db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_arca_token_cache_cuit ON arca_token_cache (cuit)`).Error; err != nil {
 		slog.Error("no se pudo crear índice único de arca_token_cache", "err", err)
