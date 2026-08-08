@@ -34,7 +34,7 @@ func Load() *Config {
 		DatabaseURL:     mustGetEnv("DATABASE_URL"),
 		ResendAPIKey:    getEnv("RESEND_API_KEY", ""),
 		ResendFromEmail: getEnv("RESEND_FROM_EMAIL", "onboarding@resend.dev"),
-		SMTPFromName:    getEnv("SMTP_FROM_NAME", "posArg Fiscal"),
+		SMTPFromName:    getEnv("SMTP_FROM_NAME", "PosArg"),
 		NegocioNombre:   getEnv("NEGOCIO_NOMBRE", "Mi Negocio"),
 		NegocioDirec:    getEnv("NEGOCIO_DIRECCION", ""),
 		NegocioTel:      getEnv("NEGOCIO_TEL", ""),

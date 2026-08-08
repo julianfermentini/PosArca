@@ -58,7 +58,7 @@ func (c *Cliente) fromName() string {
 	if c.cfg.FromName != "" {
 		return c.cfg.FromName
 	}
-	return "posArg Fiscal"
+	return "PosArg"
 }
 
 // from arma el remitente "Nombre <email>" con los defaults de siempre.
