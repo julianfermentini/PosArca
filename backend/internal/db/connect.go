@@ -104,19 +104,48 @@ BEGIN
     UPDATE tareas_pendientes SET empresa_id = eid WHERE empresa_id IS NULL;
   END IF;
 
-  -- comprobante_contadores: migrar PK de (tipo, punto_venta) → (empresa_id, tipo, punto_venta)
+  -- comprobante_contadores: agrega la columna empresa_id si falta. El backfill
+  -- de filas NULL y el cambio de PK a (empresa_id, tipo, punto_venta) quedan
+  -- 100% a cargo del bloque self-healing de más abajo, que corre en cada
+  -- arranque (no sólo cuando la columna se acaba de crear).
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='comprobante_contadores' AND column_name='empresa_id') THEN
     ALTER TABLE comprobante_contadores ADD COLUMN empresa_id uuid;
-    IF eid IS NOT NULL THEN
-      UPDATE comprobante_contadores SET empresa_id = eid;
-      -- Reemplazar la PK vieja por la nueva de 3 columnas
-      ALTER TABLE comprobante_contadores DROP CONSTRAINT IF EXISTS comprobante_contadores_pkey;
-      ALTER TABLE comprobante_contadores ADD PRIMARY KEY (empresa_id, tipo, punto_venta);
-    END IF;
   END IF;
 
 END $$`).Error; err != nil {
 		return err
+	}
+
+	// FIX comprobante_contadores: backfillea empresa_id en filas NULL (datos
+	// de la era pre-multi-tenant) y repara la PK a (empresa_id, tipo,
+	// punto_venta) si todavía quedó en la vieja de 2 columnas. Corre en cada
+	// arranque — no una sola vez — así que se auto-repara apenas exista al
+	// menos una empresa, sin depender de en qué momento se creó la columna.
+	// Sin esto, dos empresas que llegan al mismo (tipo, punto_venta) chocan
+	// al crear su contador y la emisión de comprobantes queda bloqueada.
+	if err := db.Exec(`DO $$
+DECLARE eid uuid;
+BEGIN
+  IF EXISTS (SELECT 1 FROM comprobante_contadores WHERE empresa_id IS NULL) THEN
+    SELECT id INTO eid FROM config_empresa ORDER BY created_at ASC LIMIT 1;
+    IF eid IS NOT NULL THEN
+      UPDATE comprobante_contadores SET empresa_id = eid WHERE empresa_id IS NULL;
+    END IF;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM comprobante_contadores WHERE empresa_id IS NULL) THEN
+    IF EXISTS (
+      SELECT 1 FROM pg_constraint
+      WHERE conname = 'comprobante_contadores_pkey'
+        AND conrelid = 'comprobante_contadores'::regclass
+        AND array_length(conkey, 1) = 2
+    ) THEN
+      ALTER TABLE comprobante_contadores DROP CONSTRAINT comprobante_contadores_pkey;
+      ALTER TABLE comprobante_contadores ADD PRIMARY KEY (empresa_id, tipo, punto_venta);
+    END IF;
+  END IF;
+END $$`).Error; err != nil {
+		slog.Error("no se pudo reparar la PK de comprobante_contadores", "err", err)
 	}
 
 	// FIX aislamiento multi-tenant: el índice único de ventas era global
