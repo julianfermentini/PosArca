@@ -3,7 +3,6 @@ package config
 import (
 	"log/slog"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/joho/godotenv"
@@ -11,11 +10,6 @@ import (
 
 type Config struct {
 	DatabaseURL     string // PostgreSQL DSN para GORM
-	ArcaCUIT        string // solo para migración inicial; multi-tenant usa DB
-	ArcaCertContent string // PEM del certificado; se seedea en DB al arrancar
-	ArcaKeyContent  string // PEM de la clave privada; se seedea en DB al arrancar
-	ArcaEnv         string
-	ArcaPuntoVenta  int
 	ResendAPIKey    string
 	ResendFromEmail string
 	SMTPFromName    string
@@ -36,33 +30,21 @@ func Load() *Config {
 		slog.Info("sin archivo .env, usando variables de entorno del sistema")
 	}
 
-	puntoVenta, _ := strconv.Atoi(getEnv("ARCA_PUNTO_VENTA", "1"))
-
-	// Soporta tanto el PEM directo (ARCA_CERT_CONTENT) como el archivo
-	// (ARCA_CERT_PATH + ARCA_CERT_CONTENT escrito por Railway en startup legacy).
-	certContent := getEnv("ARCA_CERT_CONTENT", "")
-	keyContent  := getEnv("ARCA_KEY_CONTENT", "")
-
 	return &Config{
 		DatabaseURL:     mustGetEnv("DATABASE_URL"),
-		ArcaCUIT:        getEnv("ARCA_CUIT", ""),
-		ArcaCertContent: certContent,
-		ArcaKeyContent:  keyContent,
-		ArcaEnv:         getEnv("ARCA_ENV", "testing"),
-		ArcaPuntoVenta:  puntoVenta,
 		ResendAPIKey:    getEnv("RESEND_API_KEY", ""),
 		ResendFromEmail: getEnv("RESEND_FROM_EMAIL", "onboarding@resend.dev"),
 		SMTPFromName:    getEnv("SMTP_FROM_NAME", "posArg Fiscal"),
-		NegocioNombre:  getEnv("NEGOCIO_NOMBRE", "Mi Negocio"),
-		NegocioDirec:   getEnv("NEGOCIO_DIRECCION", ""),
-		NegocioTel:     getEnv("NEGOCIO_TEL", ""),
-		NegocioIVACond: getEnv("NEGOCIO_IVA_COND", "Responsable Inscripto"),
-		Port:           getEnv("PORT", "8080"),
-		JWTSecret:      mustGetEnvFailFast("JWT_SECRET"),
-		CORSOrigins:    parseOrigins(getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:5173")),
-		InviteCode:     getEnv("INVITE_CODE", ""),
-		AdminSecret:    getEnv("ADMIN_SECRET", ""),
-		AlertEmail:     getEnv("ALERT_EMAIL", ""),
+		NegocioNombre:   getEnv("NEGOCIO_NOMBRE", "Mi Negocio"),
+		NegocioDirec:    getEnv("NEGOCIO_DIRECCION", ""),
+		NegocioTel:      getEnv("NEGOCIO_TEL", ""),
+		NegocioIVACond:  getEnv("NEGOCIO_IVA_COND", "Responsable Inscripto"),
+		Port:            getEnv("PORT", "8080"),
+		JWTSecret:       mustGetEnvFailFast("JWT_SECRET"),
+		CORSOrigins:     parseOrigins(getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:5173")),
+		InviteCode:      getEnv("INVITE_CODE", ""),
+		AdminSecret:     getEnv("ADMIN_SECRET", ""),
+		AlertEmail:      getEnv("ALERT_EMAIL", ""),
 	}
 }
 
