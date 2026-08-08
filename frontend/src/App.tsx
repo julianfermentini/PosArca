@@ -68,12 +68,7 @@ export default function App() {
         >
           {/* Logo */}
           <div className="flex items-center gap-2">
-            <span
-              className="flex items-center justify-center font-black text-white flex-shrink-0"
-              style={{ width: 28, height: 28, borderRadius: 8, background: '#3B72E0', fontSize: 11 }}
-            >
-              PA
-            </span>
+            <img src="/favicon-512.png" alt="posArg" className="flex-shrink-0" style={{ width: 28, height: 28, borderRadius: 8 }} />
             <span className="font-black text-white tracking-tight hidden sm:block" style={{ fontSize: 16 }}>posArg</span>
           </div>
 

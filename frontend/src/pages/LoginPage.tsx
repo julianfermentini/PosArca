@@ -63,12 +63,7 @@ export default function LoginPage() {
         <div className="hidden md:flex bg-gray-900 p-12 flex-col justify-between flex-shrink-0" style={{ width: '42%' }}>
           <div>
             <div className="flex items-center gap-2.5 mb-7">
-              <span
-                className="flex items-center justify-center font-black text-sm text-white"
-                style={{ width: 34, height: 34, borderRadius: 10, background: '#3B72E0', fontSize: 14 }}
-              >
-                PA
-              </span>
+              <img src="/favicon-512.png" alt="posArg" style={{ width: 34, height: 34, borderRadius: 10 }} />
               <span className="font-black text-white tracking-tight" style={{ fontSize: 22 }}>posArg</span>
             </div>
             <p className="text-gray-300 leading-relaxed" style={{ fontSize: 15, maxWidth: 280, lineHeight: '1.65' }}>
@@ -89,8 +84,7 @@ export default function LoginPage() {
         >
           {/* Logo — solo visible en mobile */}
           <div className="flex items-center gap-2 mb-2 md:hidden">
-            <span className="flex items-center justify-center font-black text-white text-sm"
-              style={{ width: 32, height: 32, borderRadius: 9, background: '#3B72E0' }}>PA</span>
+            <img src="/favicon-512.png" alt="posArg" style={{ width: 32, height: 32, borderRadius: 9 }} />
             <span className="font-black text-gray-900 tracking-tight text-xl">posArg</span>
           </div>
           <div>

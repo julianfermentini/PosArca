@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { adminApi, type CuentaAdmin, type ActualizarCuentaPayload } from '../lib/api'
 import { extractError } from '../lib/utils'
 
@@ -124,7 +124,7 @@ function ResetModal({ cuenta, secret, onClose }: { cuenta: CuentaAdmin; secret: 
 // ─── Modal editar cuenta ──────────────────────────────────────────────────────
 
 function EditModal({ cuenta, secret, onClose, onGuardado }: {
-  cuenta: CuentaAdmin; secret: string; onClose: () => void; onGuardado: () => void
+  cuenta: CuentaAdmin; secret: string; onClose: () => void; onGuardado: () => Promise<void>
 }) {
   const [form, setForm] = useState<ActualizarCuentaPayload>({
     razon_social: cuenta.razon_social,
@@ -152,7 +152,9 @@ function EditModal({ cuenta, secret, onClose, onGuardado }: {
     setErr('')
     try {
       await adminApi.actualizarCuenta(secret, cuenta.id, form)
-      onGuardado()
+      // Espera a que la lista esté recargada ANTES de cerrar — si no, reabrir
+      // "Editar" enseguida puede mostrar la fila vieja (todavía sin el cambio).
+      await onGuardado()
       onClose()
     } catch (ex) {
       setErr(extractError(ex))
@@ -217,7 +219,7 @@ function EditModal({ cuenta, secret, onClose, onGuardado }: {
 // ─── Modal eliminar con confirmación ─────────────────────────────────────────
 
 function EliminarModal({ cuenta, secret, onClose, onEliminado }: {
-  cuenta: CuentaAdmin; secret: string; onClose: () => void; onEliminado: () => void
+  cuenta: CuentaAdmin; secret: string; onClose: () => void; onEliminado: () => Promise<void>
 }) {
   const [confirmacion, setConfirmacion] = useState('')
   const [err, setErr] = useState('')
@@ -231,7 +233,7 @@ function EliminarModal({ cuenta, secret, onClose, onEliminado }: {
     setErr('')
     try {
       await adminApi.eliminarCuenta(secret, cuenta.id)
-      onEliminado()
+      await onEliminado()
       onClose()
     } catch (ex) {
       setErr(extractError(ex))
@@ -445,18 +447,26 @@ export default function AdminPage() {
   const [cargando, setCargando] = useState(false)
   const [modal, setModal] = useState<ModalActivo>(null)
 
+  // Descarta respuestas que lleguen fuera de orden (ej. dos guardados seguidos
+  // rápido) — sin esto, un GET viejo que resuelve después de uno nuevo puede
+  // pisar la lista recién actualizada con datos desactualizados.
+  const cargarSeq = useRef(0)
+
   const cargar = useCallback(async (s: string) => {
+    const seq = ++cargarSeq.current
     setCargando(true)
     try {
       const { data } = await adminApi.listarCuentas(s)
+      if (seq !== cargarSeq.current) return
       setCuentas(data.data ?? [])
       setAutenticado(true)
     } catch (e: unknown) {
+      if (seq !== cargarSeq.current) return
       const status = (e as { response?: { status?: number } })?.response?.status
       setAuthErr(status === 401 ? 'Secret incorrecto' : 'Error de conexión')
       setAutenticado(false)
     } finally {
-      setCargando(false)
+      if (seq === cargarSeq.current) setCargando(false)
     }
   }, [])
 
@@ -472,8 +482,7 @@ export default function AdminPage() {
       <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl shadow-xl border border-gray-200 w-full max-w-sm p-8">
           <div className="flex items-center gap-2 mb-6">
-            <span className="flex items-center justify-center font-black text-white text-xs"
-              style={{ width: 30, height: 30, borderRadius: 8, background: '#3B72E0' }}>PA</span>
+            <img src="/favicon-512.png" alt="posArg" style={{ width: 30, height: 30, borderRadius: 8 }} />
             <span className="font-black text-gray-900 tracking-tight" style={{ fontSize: 18 }}>
               posArg <span className="text-gray-400 font-normal">Admin</span>
             </span>
@@ -508,8 +517,7 @@ export default function AdminPage() {
     <div className="min-h-screen bg-gray-100">
       <nav className="flex items-center justify-between px-6 flex-shrink-0" style={{ background: '#111827', height: 56 }}>
         <div className="flex items-center gap-2">
-          <span className="flex items-center justify-center font-black text-white text-xs"
-            style={{ width: 28, height: 28, borderRadius: 8, background: '#3B72E0' }}>PA</span>
+          <img src="/favicon-512.png" alt="posArg" style={{ width: 28, height: 28, borderRadius: 8 }} />
           <span className="font-black text-white tracking-tight" style={{ fontSize: 16 }}>
             posArg <span className="text-gray-400 font-normal">Admin</span>
           </span>

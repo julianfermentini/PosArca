@@ -59,7 +59,11 @@ type cuentaAdmin struct {
 	ID                uuid.UUID `json:"id"`
 	RazonSocial       string    `json:"razon_social"`
 	Titular           string    `json:"titular"`
-	CUIT              string    `json:"cuit"`
+	// Tag de columna explícito: "CUIT" es un nombre 100% en mayúsculas, sin
+	// minúsculas que marquen límite de palabra — GORM infería mal el nombre de
+	// columna para el Scan de esta consulta Raw (el resto de los campos, con
+	// mayúsculas mezcladas como ArcaEnv o CondicionIVA, sí mapeaban bien).
+	CUIT              string    `gorm:"column:cuit" json:"cuit"`
 	Email             string    `json:"email"`
 	PuntoVenta        int       `json:"punto_venta"`
 	ArcaEnv           string    `json:"arca_env"`
