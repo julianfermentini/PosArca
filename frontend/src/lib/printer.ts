@@ -1,5 +1,5 @@
 import type { Empresa } from './api'
-import type { ItemCarrito } from '../types'
+import type { ItemCarrito, RangoComprobante } from '../types'
 import { calcularTotal } from './utils'
 
 // ─── ESC/POS encoder mínimo para impresoras térmicas ──────────────────────────
@@ -368,6 +368,8 @@ export interface DatosCierre {
   efectivo:      number
   tarjeta:       number
   billetera:     number
+  // Primer y último Numero emitido en el día, por tipo de comprobante.
+  rangoComprobantes: RangoComprobante[]
 }
 
 export function buildCierreBytes(d: DatosCierre): Uint8Array {
@@ -389,6 +391,14 @@ export function buildCierreBytes(d: DatosCierre): Uint8Array {
   enc.twoCol('Tickets:', String(d.totalTickets), W)
   enc.twoCol('Facturas:', String(d.totalFacturas), W)
   enc.twoCol('Total:', String(d.totalVentas), W)
+  if (d.rangoComprobantes.length > 0) {
+    enc.lf(1)
+    for (const r of d.rangoComprobantes) {
+      enc.line(r.tipo)
+      enc.twoCol('  Primero:', r.primero, W)
+      enc.twoCol('  Ultimo:',  r.ultimo,  W)
+    }
+  }
   enc.sep(W)
 
   enc.bold(true).line('DESGLOSE').bold(false)

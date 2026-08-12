@@ -73,6 +73,12 @@ export interface VentaOffline {
   cuenta_email?: string
 }
 
+export interface RangoComprobante {
+  tipo: TipoComprobante
+  primero: string
+  ultimo: string
+}
+
 export interface ResumenCierre {
   total_ventas: number
   total_tickets: number
@@ -84,6 +90,7 @@ export interface ResumenCierre {
   }
   monto_total: number
   monto_iva: number
+  rango_comprobantes: RangoComprobante[]
 }
 
 export interface ApiResponse<T> {

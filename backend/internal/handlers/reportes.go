@@ -19,16 +19,28 @@ func NuevoReportesHandler(db *gorm.DB) *ReportesHandler {
 }
 
 type ResumenCierre struct {
-	TotalVentas   int64   `json:"total_ventas"`
-	TotalTickets  int64   `json:"total_tickets"`
-	TotalFacturas int64   `json:"total_facturas"`
+	TotalVentas   int64 `json:"total_ventas"`
+	TotalTickets  int64 `json:"total_tickets"`
+	TotalFacturas int64 `json:"total_facturas"`
 	PorMetodoPago struct {
 		Efectivo  float64 `json:"efectivo"`
 		Tarjeta   float64 `json:"tarjeta"`
 		Billetera float64 `json:"billetera"`
 	} `json:"por_metodo_pago"`
-	MontoTotal float64 `json:"monto_total"`
-	MontoIVA   float64 `json:"monto_iva"`
+	MontoTotal        float64            `json:"monto_total"`
+	MontoIVA          float64            `json:"monto_iva"`
+	RangoComprobantes []RangoComprobante `json:"rango_comprobantes"`
+}
+
+// RangoComprobante es el primer y último Numero emitido en el período, para un
+// tipo de comprobante. Usa Numero (contador local, atómico y secuencial,
+// asignado al crear la venta) y no NumeroFiscal (CAE de ARCA): NumeroFiscal no
+// existe para TICKET, y para FACTURA se completa async vía outbox — un MIN/MAX
+// sobre él podría no reflejar lo que realmente se emitió ese día.
+type RangoComprobante struct {
+	Tipo    models.TipoComprobante `json:"tipo"`
+	Primero string                 `json:"primero"`
+	Ultimo  string                 `json:"ultimo"`
 }
 
 // CierreCaja maneja GET /api/reportes/cierre
@@ -89,6 +101,21 @@ func (h *ReportesHandler) CierreCaja(c *gin.Context) {
 	resumen.PorMetodoPago.Efectivo = mp.Efectivo
 	resumen.PorMetodoPago.Tarjeta = mp.Tarjeta
 	resumen.PorMetodoPago.Billetera = mp.Billetera
+
+	var rangos []RangoComprobante
+	h.db.Raw(`
+		SELECT tipo, MIN(numero) AS primero, MAX(numero) AS ultimo
+		FROM ventas
+		WHERE empresa_id = ? AND created_at >= ? AND created_at < ?
+		GROUP BY tipo
+		-- TICKET antes que FACTURA (orden alfabético daría lo contrario), para
+		-- coincidir con el orden ya usado en el resto de la pantalla ("X tickets
+		-- · Y facturas").
+		ORDER BY CASE tipo WHEN 'TICKET' THEN 0 ELSE 1 END`, empresaID, inicio, fin).Scan(&rangos)
+	if rangos == nil {
+		rangos = []RangoComprobante{}
+	}
+	resumen.RangoComprobantes = rangos
 
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": resumen})
 }

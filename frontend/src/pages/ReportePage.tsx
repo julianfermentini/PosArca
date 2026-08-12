@@ -289,6 +289,7 @@ export default function ReportePage() {
       efectivo:      resumen.por_metodo_pago.efectivo,
       tarjeta:       resumen.por_metodo_pago.tarjeta,
       billetera:     resumen.por_metodo_pago.billetera,
+      rangoComprobantes: resumen.rango_comprobantes,
     })
     setCierreOk(true)
     setTimeout(() => setCierreOk(false), 2500)
@@ -484,6 +485,28 @@ export default function ReportePage() {
                         <p className="text-gray-400 text-xs text-center" style={{ marginTop: 6 }}>Sin impresora conectada</p>
                       )}
                     </StatCard>
+                  </div>
+
+                  {/* Rango de comprobantes */}
+                  <div className="bg-white rounded-xl border border-gray-100" style={{ padding: 20 }}>
+                    <p className="text-gray-400 font-bold uppercase tracking-widest mb-3" style={{ fontSize: 10 }}>Rango de comprobantes</p>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      {resumen.rango_comprobantes.map(r => (
+                        <div key={r.tipo} className="flex items-center justify-between text-sm">
+                          <span className="font-bold rounded-md text-xs"
+                            style={{
+                              padding: '3px 8px',
+                              background: r.tipo === 'FACTURA' ? '#3B72E0' : '#E5E7EB',
+                              color: r.tipo === 'FACTURA' ? '#fff' : '#374151',
+                            }}>
+                            {r.tipo}
+                          </span>
+                          <span className="font-mono font-semibold text-gray-700">
+                            {r.primero} <span className="text-gray-300">→</span> {r.ultimo}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
 
                   {/* Desglose */}
