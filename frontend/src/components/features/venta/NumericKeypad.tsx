@@ -37,30 +37,35 @@ export function NumericKeypad({ value, onChange, onConfirm }: NumericKeypadProps
           {k}
         </button>
       ))}
+      {/* Sin onConfirm el ⌫ se queda con toda la fila: el teclado se usa
+          también en pantallas que tienen su propio botón de acción. */}
       <button
         onPointerDown={(e) => { e.preventDefault(); handleKey('DEL') }}
-        className="
+        className={`
           bg-amber-50 border-2 border-amber-300 rounded-xl
           text-xl font-bold text-amber-700
           min-h-[64px] flex items-center justify-center
           active:bg-amber-100 active:scale-95
           transition-all duration-75 touch-manipulation select-none
-        "
+          ${onConfirm ? '' : 'col-span-3'}
+        `}
       >
         ⌫
       </button>
-      <button
-        onPointerDown={(e) => { e.preventDefault(); onConfirm?.() }}
-        className="
-          col-span-2 bg-blue-600 rounded-xl
-          text-xl font-bold text-white
-          min-h-[64px] flex items-center justify-center
-          active:bg-blue-700 active:scale-95
-          transition-all duration-75 touch-manipulation select-none
-        "
-      >
-        Agregar ✓
-      </button>
+      {onConfirm && (
+        <button
+          onPointerDown={(e) => { e.preventDefault(); onConfirm() }}
+          className="
+            col-span-2 bg-blue-600 rounded-xl
+            text-xl font-bold text-white
+            min-h-[64px] flex items-center justify-center
+            active:bg-blue-700 active:scale-95
+            transition-all duration-75 touch-manipulation select-none
+          "
+        >
+          Agregar ✓
+        </button>
+      )}
     </div>
   )
 }

@@ -21,7 +21,9 @@ class EscPos {
   left()               { return this.push(0x1b, 0x61, 0x00) }
   right()              { return this.push(0x1b, 0x61, 0x02) }
   bold(on: boolean)    { return this.push(0x1b, 0x45, on ? 1 : 0) }
-  doubleH(on: boolean) { return this.push(0x1d, 0x21, on ? 0x01 : 0x00) }
+  // GS ! n — n = ((ancho-1) << 4) | (alto-1). Multiplicadores 1..8 por eje.
+  size(w: number, h: number) { return this.push(0x1d, 0x21, ((w - 1) << 4) | (h - 1)) }
+  doubleH(on: boolean) { return this.size(1, on ? 2 : 1) }
   lf(n = 1)            { for (let i = 0; i < n; i++) this.buf.push(0x0a); return this }
   cut()                { return this.push(0x1d, 0x56, 0x01) }
 
@@ -415,6 +417,72 @@ export function buildCierreBytes(d: DatosCierre): Uint8Array {
   enc.sep(W)
 
   enc.lf(4).cut()
+  return enc.bytes()
+}
+
+// ─── Rótulo adhesivo (nombre de plato + precio) ──────────────────────────────
+
+// Tope de copias por impresión — la UI y el builder clampean con esta constante.
+export const MAX_ROTULOS = 20
+
+// Ancho útil del rótulo: las 42 columnas de 80mm a doble ancho = 21.
+const ROTULO_COLS = 21
+
+export interface DatosRotulo {
+  nombre:   string
+  precio:   number
+  cantidad: number   // copias idénticas; se clampea a 1..MAX_ROTULOS
+}
+
+// Reparte el nombre en renglones de hasta ROTULO_COLS, llenando cada uno lo
+// más posible sin cortar palabras. Una palabra que no entra ni sola se parte
+// en trozos del ancho del renglón: no hay otra forma de que entre.
+function partirNombre(nombre: string): string[] {
+  const lineas: string[] = []
+  for (const palabra of nombre.trim().toUpperCase().split(/\s+/).filter(Boolean)) {
+    for (let i = 0; i < palabra.length; i += ROTULO_COLS) {
+      const trozo = palabra.slice(i, i + ROTULO_COLS)
+      const ultima = lineas[lineas.length - 1]
+      if (ultima && ultima.length + 1 + trozo.length <= ROTULO_COLS) lineas[lineas.length - 1] = `${ultima} ${trozo}`
+      else lineas.push(trozo)
+    }
+  }
+  return lineas
+}
+
+// "$ 12.500" / "$ 12.500,50". A diferencia del ticket, lleva separador de
+// miles y esconde los decimales en cero: es un cartel de precio para el
+// cliente. Armado a mano (no con Intl) para que no se cuelen caracteres
+// fuera de CP1252 en los bytes ESC/POS.
+function precioRotulo(precio: number): string {
+  const [ent, dec] = precio.toFixed(2).split('.')
+  const miles = ent.replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+  return `$ ${dec === '00' ? miles : `${miles},${dec}`}`
+}
+
+// Exactamente el texto que sale impreso. Exportada para que la vista previa de
+// la pantalla llame a esta misma función — así es imposible que se
+// desincronicen de lo que realmente se imprime.
+export function lineasRotulo(d: { nombre: string; precio: number }): { nombre: string[]; precio: string } {
+  return { nombre: partirNombre(d.nombre), precio: precioRotulo(d.precio) }
+}
+
+export function buildRotuloBytes(d: DatosRotulo): Uint8Array {
+  const enc = new EscPos()
+  const { nombre, precio } = lineasRotulo(d)
+  // Math.trunc(NaN) || 1 → 1: ningún valor raro puede colgar el loop.
+  const copias = Math.min(MAX_ROTULOS, Math.max(1, Math.trunc(d.cantidad) || 1))
+
+  // Un solo Uint8Array con las N copias: por Bluetooth (chunks de 20 bytes con
+  // 12ms de espera) mandar N transferencias separadas sería mucho más lento.
+  enc.init().center()
+  for (let i = 0; i < copias; i++) {
+    enc.lf(1).bold(true).size(2, 2)
+    for (const l of nombre) enc.line(l)
+    enc.size(3, 3).line(precio)
+    enc.size(1, 1).bold(false)
+    enc.lf(4).cut()   // corte por copia: salen sueltos, listos para pegar
+  }
   return enc.bytes()
 }
 

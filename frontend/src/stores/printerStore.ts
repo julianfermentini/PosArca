@@ -3,8 +3,8 @@ import { persist } from 'zustand/middleware'
 import {
   conectarUSB, imprimirUSB, desconectarUSB,
   conectarBluetooth, imprimirBluetooth, desconectarBluetooth,
-  buildTicketBytes, buildTicketNoFiscalBytes, buildCierreBytes,
-  type DatosTicketFront, type DatosTicketNoFiscal, type DatosCierre,
+  buildTicketBytes, buildTicketNoFiscalBytes, buildCierreBytes, buildRotuloBytes,
+  type DatosTicketFront, type DatosTicketNoFiscal, type DatosCierre, type DatosRotulo,
 } from '../lib/printer'
 
 type TipoConexion = 'usb' | 'bluetooth' | null
@@ -21,6 +21,7 @@ export interface PrinterStore {
   imprimir:          (datos: DatosTicketFront) => Promise<void>
   imprimirNoFiscal:  (datos: DatosTicketNoFiscal) => Promise<void>
   imprimirCierre:    (datos: DatosCierre) => Promise<void>
+  imprimirRotulo:    (datos: DatosRotulo) => Promise<void>
   clearError:        () => void
 }
 
@@ -90,6 +91,18 @@ export const usePrinterStore = create<PrinterStore>()(
           if (tipo === 'bluetooth') await imprimirBluetooth(bytes)
         } catch (e: any) {
           set({ conectado: false, error: e.message ?? 'Error al imprimir cierre' })
+        }
+      },
+
+      imprimirRotulo: async (datos) => {
+        const { tipo, conectado } = get()
+        if (!conectado || !tipo) return
+        try {
+          const bytes = buildRotuloBytes(datos)
+          if (tipo === 'usb')       await imprimirUSB(bytes)
+          if (tipo === 'bluetooth') await imprimirBluetooth(bytes)
+        } catch (e: any) {
+          set({ conectado: false, error: e.message ?? 'Error al imprimir rótulo' })
         }
       },
 

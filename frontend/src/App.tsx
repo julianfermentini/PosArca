@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom'
 import VentaPage   from './pages/VentaPage'
+import RotuloPage  from './pages/RotuloPage'
 import ReportePage from './pages/ReportePage'
 import ConfigPage  from './pages/ConfigPage'
 import LoginPage   from './pages/LoginPage'
@@ -81,6 +82,10 @@ export default function App() {
               style={({ isActive }) => isActive ? { background: '#3B72E0' } : {}}>
               Caja
             </NavLink>
+            <NavLink to="/rotulos" className={({ isActive }) => tabCls(isActive)}
+              style={({ isActive }) => isActive ? { background: '#3B72E0' } : {}}>
+              Rótulos
+            </NavLink>
             <NavLink to="/reporte" className={({ isActive }) => tabCls(isActive)}
               style={({ isActive }) => isActive ? { background: '#3B72E0' } : {}}>
               Reportes
@@ -137,6 +142,7 @@ export default function App() {
         <main className="flex-1 overflow-hidden bg-gray-50 pb-14 md:pb-0">
           <Routes>
             <Route path="/"        element={<VentaPage />} />
+            <Route path="/rotulos" element={<RotuloPage />} />
             <Route path="/reporte" element={<ReportePage />} />
             <Route path="/config"  element={<ConfigPage />} />
           </Routes>
@@ -150,6 +156,13 @@ export default function App() {
               <rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/>
             </svg>
             Caja
+          </NavLink>
+          <NavLink to="/rotulos" className={({ isActive }) => bottomTabCls(isActive)}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/>
+              <circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/>
+            </svg>
+            Rótulos
           </NavLink>
           <NavLink to="/reporte" className={({ isActive }) => bottomTabCls(isActive)}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
