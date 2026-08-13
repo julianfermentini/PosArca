@@ -425,8 +425,13 @@ export function buildCierreBytes(d: DatosCierre): Uint8Array {
 // Tope de copias por impresión — la UI y el builder clampean con esta constante.
 export const MAX_ROTULOS = 20
 
-// Ancho útil del rótulo: las 42 columnas de 80mm a doble ancho = 21.
-const ROTULO_COLS = 21
+// El rótulo se lee de lejos (vitrina, mostrador), así que va lo más grande que
+// permite el papel. Las 42 columnas de 80mm se dividen por la escala: el nombre
+// a 3x entra en 14 caracteres por renglón, el precio a 4x en 10.
+const ROTULO_W          = 42
+const ESCALA_NOMBRE     = 3
+const ESCALA_PRECIO     = 4
+const ROTULO_COLS       = Math.floor(ROTULO_W / ESCALA_NOMBRE)
 
 export interface DatosRotulo {
   nombre:   string
@@ -473,13 +478,20 @@ export function buildRotuloBytes(d: DatosRotulo): Uint8Array {
   // Math.trunc(NaN) || 1 → 1: ningún valor raro puede colgar el loop.
   const copias = Math.min(MAX_ROTULOS, Math.max(1, Math.trunc(d.cantidad) || 1))
 
+  // El precio va a ESCALA_PRECIO salvo que a esa escala no entre en el renglón
+  // (a 4x son 10 caracteres, y "$ 1.234.567" ya necesita 11): en ese caso baja
+  // a la del nombre, que siempre le da lugar.
+  const escalaPrecio = precio.length <= Math.floor(ROTULO_W / ESCALA_PRECIO) ? ESCALA_PRECIO : ESCALA_NOMBRE
+
   // Un solo Uint8Array con las N copias: por Bluetooth (chunks de 20 bytes con
   // 12ms de espera) mandar N transferencias separadas sería mucho más lento.
+  // Nada de avance antes del texto: la térmica ya deja un margen físico arriba
+  // (el tramo de papel entre el cabezal y la guillotina del corte anterior).
   enc.init().center()
   for (let i = 0; i < copias; i++) {
-    enc.lf(1).bold(true).size(2, 2)
+    enc.bold(true).size(ESCALA_NOMBRE, ESCALA_NOMBRE)
     for (const l of nombre) enc.line(l)
-    enc.size(3, 3).line(precio)
+    enc.size(escalaPrecio, escalaPrecio).line(precio)
     enc.size(1, 1).bold(false)
     enc.lf(4).cut()   // corte por copia: salen sueltos, listos para pegar
   }

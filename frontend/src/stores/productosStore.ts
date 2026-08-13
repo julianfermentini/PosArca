@@ -14,6 +14,7 @@ interface ProductosState {
   agregar: (nombre: string, precio: number | null) => Promise<void>
   editar: (id: string, nombre: string, precio: number | null) => Promise<void>
   eliminar: (id: string) => Promise<void>
+  reset: () => void
 }
 
 export const useProductosStore = create<ProductosState>()(
@@ -67,6 +68,8 @@ export const useProductosStore = create<ProductosState>()(
           set({ productos: prev })
         }
       },
+
+      reset: () => set({ productos: [] }),
     }),
     { name: 'pos-productos' }
   )

@@ -2,6 +2,8 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { useEmpresaStore } from './empresaStore'
 import { useVentaStore } from './ventaStore'
+import { useProductosStore } from './productosStore'
+import { useRotulosStore } from './rotulosStore'
 
 interface AuthState {
   token: string | null
@@ -12,14 +14,16 @@ interface AuthState {
   isAuthenticated: () => boolean
 }
 
-// Limpia todo estado (en memoria y persistido) de la cuenta anterior. Borrar
-// solo la clave de localStorage no alcanza para los stores ya hidratados —
-// por eso empresaStore/ventaStore se resetean explícitamente en memoria, y
-// no solo vía removeItem.
+// Limpia todo estado de la cuenta anterior. Tiene que ser en memoria y no un
+// removeItem de localStorage: los stores ya hidratados se siguen mostrando con
+// los datos viejos hasta que responde el cargar() del login siguiente, y en
+// una app multi-empresa eso es mostrarle a una cuenta los datos de otra.
+// Reseteando el store alcanza — zustand/persist reescribe lo persistido solo.
 function resetSesion() {
-  localStorage.removeItem('pos-productos')
   useEmpresaStore.getState().reset()
   useVentaStore.getState().limpiarCarrito()
+  useProductosStore.getState().reset()
+  useRotulosStore.getState().reset()
 }
 
 export const useAuthStore = create<AuthState>()(

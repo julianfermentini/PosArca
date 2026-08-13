@@ -165,6 +165,22 @@ export const productosApi = {
     api.delete<ApiResponse<null>>(`/productos/${id}`),
 }
 
+export interface RotuloAPI {
+  id: string
+  nombre: string
+  precio: number
+}
+
+export const rotulosApi = {
+  listar: () =>
+    api.get<ApiResponse<RotuloAPI[]>>('/rotulos'),
+  // Upsert: si ya hay un rótulo con ese nombre, le pisa el precio.
+  guardar: (nombre: string, precio: number) =>
+    api.post<ApiResponse<RotuloAPI>>('/rotulos', { nombre, precio }),
+  eliminar: (id: string) =>
+    api.delete<ApiResponse<null>>(`/rotulos/${id}`),
+}
+
 export interface CuentaAdmin {
   id: string
   razon_social: string

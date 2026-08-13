@@ -89,6 +89,11 @@ func SetupRouter(db *gorm.DB, cfg *config.Config, worker *handlers.Worker) *gin.
 			protected.POST("/productos", productos.Create)
 			protected.PUT("/productos/:id", productos.Update)
 			protected.DELETE("/productos/:id", productos.Delete)
+
+			rotulos := handlers.NuevoRotuloHandler(db)
+			protected.GET("/rotulos", rotulos.List)
+			protected.POST("/rotulos", rotulos.Guardar)
+			protected.DELETE("/rotulos/:id", rotulos.Delete)
 		}
 	}
 

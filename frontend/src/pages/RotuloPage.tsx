@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { useProductosStore, type Producto } from '../stores/productosStore'
+import { useEffect, useState } from 'react'
+import { useRotulosStore, type Rotulo } from '../stores/rotulosStore'
 import { usePrinterStore } from '../stores/printerStore'
 import { NumericKeypad } from '../components/features/venta/NumericKeypad'
 import { lineasRotulo, MAX_ROTULOS } from '../lib/printer'
@@ -7,33 +7,48 @@ import { formatPrecio } from '../lib/utils'
 
 export default function RotuloPage() {
   const printer = usePrinterStore()
-  const { productos } = useProductosStore()
+  const { rotulos, cargar, guardar, eliminar } = useRotulosStore()
 
   const [nombre, setNombre]     = useState('')
   const [precio, setPrecio]     = useState('')   // string: mismo contrato que NumericKeypad
   const [cantidad, setCantidad] = useState(1)
-  const [ok, setOk]             = useState(false)
+  const [aviso, setAviso]       = useState<{ texto: string; ok: boolean } | null>(null)
+
+  useEffect(() => { cargar() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const precioNum     = parseFloat(precio) || 0
-  const puedeImprimir = printer.conectado && nombre.trim() !== '' && precioNum > 0
-  // Literalmente lo que sale impreso: misma función que usa buildRotuloBytes.
-  const preview       = lineasRotulo({ nombre, precio: precioNum })
+  const nombreLimpio  = nombre.trim()
+  const completo      = nombreLimpio !== '' && precioNum > 0
+  const puedeImprimir = completo && printer.conectado
+  const yaGuardado    = rotulos.some(r => r.nombre === nombreLimpio && r.precio === precioNum)
+  // Literalmente lo que sale impreso: misma función y mismos datos que recibe
+  // buildRotuloBytes al imprimir.
+  const preview       = lineasRotulo({ nombre: nombreLimpio, precio: precioNum })
 
-  // Los productos no son un modo aparte: sólo prellenan los mismos dos campos.
-  const seleccionar = (p: Producto) => {
-    setNombre(p.nombre)
-    setPrecio(p.precio !== null ? String(p.precio) : '')
+  const mostrarAviso = (texto: string, ok = true) => {
+    setAviso({ texto, ok })
+    setTimeout(() => setAviso(null), 2500)
+  }
+
+  const cargarRotulo = (r: Rotulo) => {
+    setNombre(r.nombre)
+    setPrecio(String(r.precio))
   }
 
   const imprimir = async () => {
     if (!puedeImprimir) return
     printer.clearError()
-    await printer.imprimirRotulo({ nombre: nombre.trim(), precio: precioNum, cantidad })
+    await printer.imprimirRotulo({ nombre: nombreLimpio, precio: precioNum, cantidad })
     // Las acciones del store se tragan el error en el estado en vez de
     // re-lanzarlo, así que hay que leerlo para no cantar un ✓ sobre un fallo.
     if (usePrinterStore.getState().error) return
-    setOk(true)
-    setTimeout(() => setOk(false), 2500)
+    mostrarAviso('Enviado a la impresora')
+  }
+
+  const guardarRotulo = async () => {
+    if (!completo || yaGuardado) return
+    const ok = await guardar(nombreLimpio, precioNum)
+    mostrarAviso(ok ? 'Rótulo guardado' : 'No se pudo guardar', ok)
   }
 
   return (
@@ -82,23 +97,15 @@ export default function RotuloPage() {
             <div>
               <Eyebrow>Cantidad</Eyebrow>
               <div className="flex items-center" style={{ gap: 14 }}>
-                <StepperBtn
-                  onClick={() => setCantidad(c => Math.max(1, c - 1))}
-                  disabled={cantidad <= 1}
-                  label="−"
-                />
+                <StepperBtn onClick={() => setCantidad(c => Math.max(1, c - 1))} disabled={cantidad <= 1} label="−" />
                 <span className="font-black text-gray-900 text-center" style={{ fontSize: 28, minWidth: 48 }}>
                   {cantidad}
                 </span>
-                <StepperBtn
-                  onClick={() => setCantidad(c => Math.min(MAX_ROTULOS, c + 1))}
-                  disabled={cantidad >= MAX_ROTULOS}
-                  label="+"
-                />
+                <StepperBtn onClick={() => setCantidad(c => Math.min(MAX_ROTULOS, c + 1))} disabled={cantidad >= MAX_ROTULOS} label="+" />
               </div>
             </div>
 
-            <div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <button
                 onClick={imprimir}
                 disabled={!puedeImprimir}
@@ -112,23 +119,36 @@ export default function RotuloPage() {
                 </svg>
                 Imprimir {cantidad} {cantidad === 1 ? 'rótulo' : 'rótulos'}
               </button>
+
+              <button
+                onClick={guardarRotulo}
+                disabled={!completo || yaGuardado}
+                className="w-full flex items-center justify-center gap-2 font-semibold rounded-xl border transition-colors disabled:opacity-40"
+                style={{
+                  height: 44, fontSize: 14, background: '#fff', borderColor: '#D1D5DB', color: '#374151',
+                  cursor: completo && !yaGuardado ? 'pointer' : 'not-allowed',
+                }}
+              >
+                {yaGuardado ? '✓ Guardado' : 'Guardar rótulo'}
+              </button>
+
               {!printer.conectado && (
-                <p className="text-gray-400 text-xs text-center" style={{ marginTop: 6 }}>Sin impresora conectada</p>
+                <p className="text-gray-400 text-xs text-center" style={{ margin: 0 }}>Sin impresora conectada</p>
               )}
               {printer.error && (
-                <p className="text-xs text-red-700 rounded-lg" style={{ background: '#FEF2F2', padding: '8px 12px', marginTop: 8 }}>
+                <p className="text-xs text-red-700 rounded-lg" style={{ background: '#FEF2F2', padding: '8px 12px', margin: 0 }}>
                   {printer.error}
                 </p>
               )}
-              {ok && (
-                <p className="text-sm font-semibold text-center" style={{ color: '#16A34A', marginTop: 8 }}>
-                  ✓ Enviado a la impresora
+              {aviso && (
+                <p className="text-sm font-semibold text-center" style={{ color: aviso.ok ? '#16A34A' : '#DC2626', margin: 0 }}>
+                  {aviso.texto}
                 </p>
               )}
             </div>
           </div>
 
-          {/* ── Vista previa + productos ── */}
+          {/* ── Vista previa + guardados ── */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
             <div className="bg-white rounded-xl border border-gray-100" style={{ padding: 20 }}>
@@ -139,12 +159,12 @@ export default function RotuloPage() {
                 gap: 4, minHeight: 130,
               }}>
                 {preview.nombre.length === 0
-                  ? <span className="text-gray-300 text-sm">Escribí un nombre o tocá un producto</span>
+                  ? <span className="text-gray-300 text-sm">Escribí un nombre o elegí uno guardado</span>
                   : preview.nombre.map((l, i) => (
-                      <span key={i} className="font-mono font-black text-gray-900" style={{ fontSize: 20, lineHeight: 1.15 }}>{l}</span>
+                      <span key={i} className="font-mono font-black text-gray-900" style={{ fontSize: 22, lineHeight: 1.15 }}>{l}</span>
                     ))}
                 {precioNum > 0 && (
-                  <span className="font-mono font-black text-gray-900" style={{ fontSize: 30, marginTop: 6 }}>{preview.precio}</span>
+                  <span className="font-mono font-black text-gray-900" style={{ fontSize: 32, marginTop: 8 }}>{preview.precio}</span>
                 )}
               </div>
               {cantidad > 1 && (
@@ -155,26 +175,36 @@ export default function RotuloPage() {
             </div>
 
             <div className="bg-white rounded-xl border border-gray-100" style={{ padding: 20 }}>
-              <Eyebrow>Productos</Eyebrow>
-              {productos.length === 0 ? (
-                <div className="flex flex-col items-center justify-center text-center text-gray-300 gap-2" style={{ minHeight: 120 }}>
-                  <p className="font-semibold" style={{ fontSize: 15, margin: 0 }}>Sin productos</p>
-                  <p className="text-sm" style={{ margin: 0 }}>Andá a Configuración para agregar.</p>
+              <Eyebrow>Rótulos guardados</Eyebrow>
+              {rotulos.length === 0 ? (
+                <div className="flex flex-col items-center justify-center text-center text-gray-300 gap-2" style={{ minHeight: 110 }}>
+                  <p className="font-semibold" style={{ fontSize: 15, margin: 0 }}>Todavía no guardaste ninguno</p>
+                  <p className="text-sm" style={{ margin: 0 }}>Cargá un nombre y un precio, y tocá "Guardar rótulo".</p>
                 </div>
               ) : (
-                <div className="grid grid-cols-2 md:grid-cols-3" style={{ gap: 12 }}>
-                  {productos.map(p => (
-                    <button
-                      key={p.id}
-                      onPointerDown={e => { e.preventDefault(); seleccionar(p) }}
-                      className="flex flex-col items-start text-white text-left active:scale-95 transition-all touch-manipulation"
-                      style={{ background: '#64748B', borderRadius: 14, padding: '16px 14px', minHeight: 78, border: 'none', cursor: 'pointer', gap: 5 }}
-                    >
-                      <span style={{ fontSize: 16, fontWeight: 800, lineHeight: 1.2 }}>{p.nombre}</span>
-                      <span style={{ fontSize: 13, fontWeight: 600, opacity: 0.85 }}>
-                        {p.precio !== null ? formatPrecio(p.precio) : 'Precio libre'}
-                      </span>
-                    </button>
+                <div className="flex flex-col" style={{ gap: 8 }}>
+                  {rotulos.map(r => (
+                    <div key={r.id} className="flex items-center rounded-xl border border-gray-100" style={{ gap: 8 }}>
+                      <button
+                        onPointerDown={e => { e.preventDefault(); cargarRotulo(r) }}
+                        className="flex-1 flex items-center justify-between min-w-0 text-left active:scale-[0.99] transition-transform touch-manipulation"
+                        style={{ padding: '14px 16px', background: 'transparent', border: 'none', cursor: 'pointer', gap: 12 }}
+                      >
+                        <span className="font-semibold text-gray-900 min-w-0 truncate" style={{ fontSize: 15 }}>{r.nombre}</span>
+                        <span className="font-mono font-bold text-gray-700 flex-shrink-0" style={{ fontSize: 14 }}>{formatPrecio(r.precio)}</span>
+                      </button>
+                      <button
+                        onClick={() => eliminar(r.id)}
+                        title="Borrar rótulo"
+                        className="flex items-center justify-center text-red-400 hover:bg-red-50 rounded-lg flex-shrink-0"
+                        style={{ width: 34, height: 34, marginRight: 8, border: 'none', background: 'transparent', cursor: 'pointer' }}
+                      >
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M3 6h18" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                          <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                        </svg>
+                      </button>
+                    </div>
                   ))}
                 </div>
               )}

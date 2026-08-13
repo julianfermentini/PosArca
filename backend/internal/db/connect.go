@@ -38,6 +38,7 @@ func migrar(db *gorm.DB) error {
 		&models.VentaItem{},
 		&models.Factura{},
 		&models.Producto{},
+		&models.Rotulo{},
 		&models.ComprobanteContador{},
 		&models.ArcaTokenCache{},
 		&models.TareaPendiente{},
