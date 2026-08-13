@@ -93,6 +93,7 @@ func SetupRouter(db *gorm.DB, cfg *config.Config, worker *handlers.Worker) *gin.
 			rotulos := handlers.NuevoRotuloHandler(db)
 			protected.GET("/rotulos", rotulos.List)
 			protected.POST("/rotulos", rotulos.Guardar)
+			protected.PUT("/rotulos/:id", rotulos.Actualizar)
 			protected.DELETE("/rotulos/:id", rotulos.Delete)
 		}
 	}

@@ -177,6 +177,9 @@ export const rotulosApi = {
   // Upsert: si ya hay un rótulo con ese nombre, le pisa el precio.
   guardar: (nombre: string, precio: number) =>
     api.post<ApiResponse<RotuloAPI>>('/rotulos', { nombre, precio }),
+  // Por id — es lo que permite renombrar sin dejar el viejo al lado.
+  actualizar: (id: string, nombre: string, precio: number) =>
+    api.put<ApiResponse<RotuloAPI>>(`/rotulos/${id}`, { nombre, precio }),
   eliminar: (id: string) =>
     api.delete<ApiResponse<null>>(`/rotulos/${id}`),
 }

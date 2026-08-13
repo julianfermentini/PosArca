@@ -2,12 +2,12 @@ import { useEffect, useState } from 'react'
 import { useRotulosStore, type Rotulo } from '../stores/rotulosStore'
 import { usePrinterStore } from '../stores/printerStore'
 import { NumericKeypad } from '../components/features/venta/NumericKeypad'
+import { RotulosGuardados } from '../components/features/rotulos/RotulosGuardados'
 import { lineasRotulo, MAX_ROTULOS } from '../lib/printer'
-import { formatPrecio } from '../lib/utils'
 
 export default function RotuloPage() {
   const printer = usePrinterStore()
-  const { rotulos, cargar, guardar, eliminar } = useRotulosStore()
+  const { rotulos, cargar, guardar } = useRotulosStore()
 
   const [nombre, setNombre]     = useState('')
   const [precio, setPrecio]     = useState('')   // string: mismo contrato que NumericKeypad
@@ -47,8 +47,8 @@ export default function RotuloPage() {
 
   const guardarRotulo = async () => {
     if (!completo || yaGuardado) return
-    const ok = await guardar(nombreLimpio, precioNum)
-    mostrarAviso(ok ? 'Rótulo guardado' : 'No se pudo guardar', ok)
+    const err = await guardar(nombreLimpio, precioNum)
+    mostrarAviso(err ?? 'Rótulo guardado', !err)
   }
 
   return (
@@ -174,41 +174,7 @@ export default function RotuloPage() {
               )}
             </div>
 
-            <div className="bg-white rounded-xl border border-gray-100" style={{ padding: 20 }}>
-              <Eyebrow>Rótulos guardados</Eyebrow>
-              {rotulos.length === 0 ? (
-                <div className="flex flex-col items-center justify-center text-center text-gray-300 gap-2" style={{ minHeight: 110 }}>
-                  <p className="font-semibold" style={{ fontSize: 15, margin: 0 }}>Todavía no guardaste ninguno</p>
-                  <p className="text-sm" style={{ margin: 0 }}>Cargá un nombre y un precio, y tocá "Guardar rótulo".</p>
-                </div>
-              ) : (
-                <div className="flex flex-col" style={{ gap: 8 }}>
-                  {rotulos.map(r => (
-                    <div key={r.id} className="flex items-center rounded-xl border border-gray-100" style={{ gap: 8 }}>
-                      <button
-                        onPointerDown={e => { e.preventDefault(); cargarRotulo(r) }}
-                        className="flex-1 flex items-center justify-between min-w-0 text-left active:scale-[0.99] transition-transform touch-manipulation"
-                        style={{ padding: '14px 16px', background: 'transparent', border: 'none', cursor: 'pointer', gap: 12 }}
-                      >
-                        <span className="font-semibold text-gray-900 min-w-0 truncate" style={{ fontSize: 15 }}>{r.nombre}</span>
-                        <span className="font-mono font-bold text-gray-700 flex-shrink-0" style={{ fontSize: 14 }}>{formatPrecio(r.precio)}</span>
-                      </button>
-                      <button
-                        onClick={() => eliminar(r.id)}
-                        title="Borrar rótulo"
-                        className="flex items-center justify-center text-red-400 hover:bg-red-50 rounded-lg flex-shrink-0"
-                        style={{ width: 34, height: 34, marginRight: 8, border: 'none', background: 'transparent', cursor: 'pointer' }}
-                      >
-                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M3 6h18" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                          <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-                        </svg>
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            <RotulosGuardados onCargar={cargarRotulo} />
           </div>
         </div>
       </div>
