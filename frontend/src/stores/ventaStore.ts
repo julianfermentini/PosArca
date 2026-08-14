@@ -39,12 +39,27 @@ export interface VentaState {
   getItemsParaAPI: () => ItemRequest[]
 }
 
-// El precio final por unidad es la fuente de verdad. El descuento se aplica
-// sobre él (que es lo que significa un descuento para el cliente) y el neto se
-// deriva dividiendo, igual que en models.NuevoVentaItem del backend. El IVA
-// sale siempre por RESTA (final − neto), así neto + IVA vuelve a dar exacto el
-// precio tipeado aunque la división no sea redonda.
-const finalUnitConDesc = (final: number, pct: number) => redondear(final * (1 - pct / 100))
+// La ÚNICA aritmética de plata del carrito: los montos de una línea, derivados
+// igual que models.NuevoVentaItem en el backend. El precio final por unidad es
+// la fuente de verdad; el descuento se aplica sobre él (que es lo que significa
+// un descuento para el cliente), el neto sale de dividir y el IVA por RESTA
+// (final − neto), así neto + IVA vuelve a dar exacto el precio tipeado aunque
+// la división no sea redonda. Todo lo demás en este store es sumar esto.
+function montosLinea(item: ItemCarrito, pct: number) {
+  const final = redondear(item.precio_final * (1 - pct / 100))
+  const neto = calcularNeto(final)
+  return {
+    finalUnit: final,
+    netoUnit:  neto,
+    neto:      neto * item.cantidad,
+    iva:       (final - neto) * item.cantidad,
+    total:     final * item.cantidad,
+  }
+}
+
+type MontoLinea = 'neto' | 'iva' | 'total'
+const sumar = (carrito: ItemCarrito[], pct: number, campo: MontoLinea) =>
+  redondear(carrito.reduce((acc, item) => acc + montosLinea(item, pct)[campo], 0))
 
 export const useVentaStore = create<VentaState>((set, get) => ({
   carrito: [],
@@ -123,42 +138,25 @@ export const useVentaStore = create<VentaState>((set, get) => ({
   // quedarían desalineados.
   setDescuento: (pct) => set({ descuentoPct: pct, montoEfectivo: 0, montoTarjeta: 0, montoBilletera: 0 }),
 
-  // Neto bruto, sin descuento — base del "Subtotal neto" en pantalla.
-  getSubtotal: () =>
-    get().carrito.reduce((acc, item) => acc + calcularNeto(item.precio_final) * item.cantidad, 0),
+  // Neto bruto — el "Subtotal neto" de pantalla es el mismo cálculo con
+  // descuento 0, no una fórmula aparte.
+  getSubtotal: () => sumar(get().carrito, 0, 'neto'),
 
   // Neto ya descontado — la base imponible que se factura.
-  getNetoConDescuento: () => {
-    const pct = get().descuentoPct
-    return get().carrito.reduce(
-      (acc, item) => acc + calcularNeto(finalUnitConDesc(item.precio_final, pct)) * item.cantidad, 0)
-  },
+  getNetoConDescuento: () => sumar(get().carrito, get().descuentoPct, 'neto'),
 
   getDescuentoNeto: () => redondear(get().getSubtotal() - get().getNetoConDescuento()),
 
-  // Descuento en pesos con IVA incluido — para la línea del ticket.
-  getDescuentoTotal: () => {
-    const pct = get().descuentoPct
-    return redondear(get().carrito.reduce(
-      (acc, item) => acc + (item.precio_final - finalUnitConDesc(item.precio_final, pct)) * item.cantidad, 0))
-  },
+  // Descuento en pesos con IVA incluido — para la línea del ticket. Es la
+  // diferencia entre los dos totales, así no puede desalinearse del TOTAL.
+  getDescuentoTotal: () =>
+    redondear(sumar(get().carrito, 0, 'total') - get().getTotal()),
 
-  // IVA por resta, igual que el backend: nunca como 21% del neto redondeado.
-  getIVA: () => {
-    const pct = get().descuentoPct
-    return redondear(get().carrito.reduce((acc, item) => {
-      const final = finalUnitConDesc(item.precio_final, pct)
-      return acc + (final - calcularNeto(final)) * item.cantidad
-    }, 0))
-  },
+  getIVA: () => sumar(get().carrito, get().descuentoPct, 'iva'),
 
-  // Suma de los precios finales: sin una sola división, así no puede
-  // discrepar del total que calcula el backend ni del que autoriza ARCA.
-  getTotal: () => {
-    const pct = get().descuentoPct
-    return redondear(get().carrito.reduce(
-      (acc, item) => acc + finalUnitConDesc(item.precio_final, pct) * item.cantidad, 0))
-  },
+  // Suma de precios finales, sin una sola división: no puede discrepar del
+  // total que calcula el backend ni del que autoriza ARCA.
+  getTotal: () => sumar(get().carrito, get().descuentoPct, 'total'),
 
   getSumaPagos: () => {
     const { montoEfectivo, montoTarjeta, montoBilletera } = get()
@@ -174,11 +172,11 @@ export const useVentaStore = create<VentaState>((set, get) => ({
   getItemsParaAPI: () => {
     const pct = get().descuentoPct
     return get().carrito.map(item => {
-      const final = finalUnitConDesc(item.precio_final, pct)
+      const m = montosLinea(item, pct)
       return {
         descripcion: item.descripcion,
-        precio_final: final,
-        precio_neto: calcularNeto(final),
+        precio_final: m.finalUnit,
+        precio_neto: m.netoUnit,
         cantidad: item.cantidad,
       }
     })
