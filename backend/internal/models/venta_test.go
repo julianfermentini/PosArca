@@ -29,6 +29,9 @@ func TestRedondear(t *testing.T) {
 	}
 }
 
+// Ojo: los tests que mandan PrecioNeto ejercitan el camino LEGACY (ventas
+// encoladas offline por una versión anterior). Que sigan pasando sin tocarlos
+// es justamente la prueba de que esos payloads dan los mismos montos que antes.
 func TestNuevoVentaItem_IVA21(t *testing.T) {
 	it := NuevoVentaItem(uuid.Nil, ItemRequest{Descripcion: "Cerveza", PrecioNeto: 100, Cantidad: 1}, 0)
 	if !casiIgual(it.IVA, 21.00) {
@@ -36,6 +39,80 @@ func TestNuevoVentaItem_IVA21(t *testing.T) {
 	}
 	if !casiIgual(it.Total, 121.00) {
 		t.Errorf("Total = %v, esperaba 121.00", it.Total)
+	}
+}
+
+func TestNuevoVentaItem_PrecioFinalIVA21(t *testing.T) {
+	it := NuevoVentaItem(uuid.Nil, ItemRequest{Descripcion: "Cerveza", PrecioFinal: 121, Cantidad: 1}, 0)
+	if !casiIgual(it.PrecioNeto, 100.00) {
+		t.Errorf("PrecioNeto = %v, esperaba 100.00", it.PrecioNeto)
+	}
+	if !casiIgual(it.IVA, 21.00) {
+		t.Errorf("IVA = %v, esperaba 21.00", it.IVA)
+	}
+	if !casiIgual(it.Total, 121.00) {
+		t.Errorf("Total = %v, esperaba 121.00", it.Total)
+	}
+}
+
+// El bug que motivó todo esto: un ítem de $100 terminaba valiendo $99,99. El
+// precio final tipeado tiene que salir intacto, para CUALQUIER precio.
+func TestNuevoVentaItem_RespetaElPrecioTipeado(t *testing.T) {
+	for centavos := 1; centavos <= 1000000; centavos += 7 {
+		final := float64(centavos) / 100
+		for _, qty := range []int{1, 2, 3} {
+			it := NuevoVentaItem(uuid.Nil, ItemRequest{Descripcion: "x", PrecioFinal: final, Cantidad: qty}, 0)
+			esperado := redondear(final * float64(qty))
+			if !casiIgual(it.Total, esperado) {
+				t.Fatalf("precio %.2f x%d: Total = %.2f, esperaba %.2f", final, qty, it.Total, esperado)
+			}
+		}
+	}
+}
+
+// La identidad de la que depende ARCA: ImpNeto + ImpIVA == ImpTotal. Se arma
+// como Total - IVA (outbox.go), así que esto tiene que dar exacto por línea.
+func TestNuevoVentaItem_IdentidadNetoMasIVA(t *testing.T) {
+	for centavos := 1; centavos <= 500000; centavos += 13 {
+		final := float64(centavos) / 100
+		for _, qty := range []int{1, 2, 5, 12} {
+			it := NuevoVentaItem(uuid.Nil, ItemRequest{Descripcion: "x", PrecioFinal: final, Cantidad: qty}, 0)
+			if !casiIgual(it.Total-it.IVA, it.PrecioNeto*float64(qty)) {
+				t.Fatalf("precio %.2f x%d: Total(%.2f) - IVA(%.2f) = %.2f, pero neto*cant = %.2f",
+					final, qty, it.Total, it.IVA, it.Total-it.IVA, it.PrecioNeto*float64(qty))
+			}
+		}
+	}
+}
+
+// Regresión de compatibilidad: un payload legacy (sólo precio_neto) tiene que
+// producir EXACTAMENTE el mismo VentaItem que producía la versión anterior.
+// Una venta encolada offline no puede cambiar de importe al sincronizarse.
+func TestNuevoVentaItem_LegacyIgualQueLaVersionAnterior(t *testing.T) {
+	// La fórmula vieja, tal cual estaba antes de este cambio.
+	viejo := func(neto float64, cant int) (float64, float64, float64) {
+		ivaUnit := redondear(neto * 0.21)
+		return neto, redondear(ivaUnit * float64(cant)), redondear((neto + ivaUnit) * float64(cant))
+	}
+	for centavos := 1; centavos <= 500000; centavos += 11 {
+		neto := float64(centavos) / 100
+		for _, qty := range []int{1, 2, 3, 7} {
+			it := NuevoVentaItem(uuid.Nil, ItemRequest{Descripcion: "x", PrecioNeto: neto, Cantidad: qty}, 0)
+			wNeto, wIVA, wTotal := viejo(neto, qty)
+			if !casiIgual(it.PrecioNeto, wNeto) || !casiIgual(it.IVA, wIVA) || !casiIgual(it.Total, wTotal) {
+				t.Fatalf("legacy neto=%.2f x%d: dio (%.2f, %.2f, %.2f), la versión anterior daba (%.2f, %.2f, %.2f)",
+					neto, qty, it.PrecioNeto, it.IVA, it.Total, wNeto, wIVA, wTotal)
+			}
+		}
+	}
+}
+
+// Durante la transición el frontend manda los dos campos para que el deploy
+// pueda salir en cualquier orden. El final tiene que ganar siempre.
+func TestNuevoVentaItem_PrecioFinalGanaSobreNeto(t *testing.T) {
+	it := NuevoVentaItem(uuid.Nil, ItemRequest{Descripcion: "x", PrecioFinal: 100, PrecioNeto: 82.64, Cantidad: 1}, 0)
+	if !casiIgual(it.Total, 100.00) {
+		t.Errorf("Total = %v, esperaba 100.00 (el precio final manda)", it.Total)
 	}
 }
 
@@ -52,21 +129,21 @@ func TestNuevoVentaItem_CantidadCeroOMenosEsUno(t *testing.T) {
 // lo mismo que N líneas de una unidad. Si el redondeo del IVA se hiciera después
 // de multiplicar por la cantidad, esto se rompería por centavos.
 func TestNuevoVentaItem_LineaIgualASumaDeUnidades(t *testing.T) {
-	netos := []float64{82.64, 100, 33.06, 41.32, 123.97, 8.26, 1.65}
+	finales := []float64{100, 121, 99.99, 40, 150, 8.26, 1.65, 6300, 8500, 35000}
 	qtys := []int{2, 3, 5, 7, 12}
-	for _, neto := range netos {
+	for _, final := range finales {
 		for _, qty := range qtys {
-			linea := NuevoVentaItem(uuid.Nil, ItemRequest{Descripcion: "x", PrecioNeto: neto, Cantidad: qty}, 0)
-			unidad := NuevoVentaItem(uuid.Nil, ItemRequest{Descripcion: "x", PrecioNeto: neto, Cantidad: 1}, 0)
+			linea := NuevoVentaItem(uuid.Nil, ItemRequest{Descripcion: "x", PrecioFinal: final, Cantidad: qty}, 0)
+			unidad := NuevoVentaItem(uuid.Nil, ItemRequest{Descripcion: "x", PrecioFinal: final, Cantidad: 1}, 0)
 
 			sumaIVA := redondear(unidad.IVA * float64(qty))
 			sumaTotal := redondear(unidad.Total * float64(qty))
 
 			if !casiIgual(linea.IVA, sumaIVA) {
-				t.Errorf("neto=%.2f qty=%d: IVA de línea %.2f != suma de unidades %.2f", neto, qty, linea.IVA, sumaIVA)
+				t.Errorf("final=%.2f qty=%d: IVA de línea %.2f != suma de unidades %.2f", final, qty, linea.IVA, sumaIVA)
 			}
 			if !casiIgual(linea.Total, sumaTotal) {
-				t.Errorf("neto=%.2f qty=%d: Total de línea %.2f != suma de unidades %.2f", neto, qty, linea.Total, sumaTotal)
+				t.Errorf("final=%.2f qty=%d: Total de línea %.2f != suma de unidades %.2f", final, qty, linea.Total, sumaTotal)
 			}
 		}
 	}

@@ -25,9 +25,12 @@ func NuevoSyncHandler(db *gorm.DB, worker *Worker) *SyncHandler {
 }
 
 type VentaOffline struct {
-	ID             string                 `json:"id"`
-	Tipo           models.TipoComprobante `json:"tipo"`
-	Items          []models.ItemRequest   `json:"items"`
+	ID string `json:"id"`
+	// Mismas restricciones que el alta online: sin oneof, un tipo arbitrario
+	// crea un contador espurio; sin min=1, una venta sin ítems llega a ARCA
+	// con ImpTotal 0.
+	Tipo           models.TipoComprobante `json:"tipo" binding:"required,oneof=TICKET FACTURA"`
+	Items          []models.ItemRequest   `json:"items" binding:"required,min=1,dive"`
 	MontoEfectivo  float64                `json:"monto_efectivo"`
 	MontoTarjeta   float64                `json:"monto_tarjeta"`
 	MontoBilletera float64                `json:"monto_billetera"`
@@ -45,7 +48,9 @@ type SyncResultado struct {
 // SincronizarVentas maneja POST /api/sync/ventas
 func (h *SyncHandler) SincronizarVentas(c *gin.Context) {
 	var req struct {
-		Ventas []VentaOffline `json:"ventas" binding:"required"`
+		// dive: sin esto validator no entra a los elementos del slice y los
+		// tags de cada VentaOffline (y de sus ítems) no se chequean nunca.
+		Ventas []VentaOffline `json:"ventas" binding:"required,dive"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": err.Error()})

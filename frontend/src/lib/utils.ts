@@ -37,17 +37,10 @@ export function redondear(n: number): number {
   return Math.round(n * 100) / 100
 }
 
-// El precio que ingresa el usuario ya tiene IVA incluido.
-// Estas funciones reciben precio_neto (ya calculado) como siempre.
-export function calcularIVA(precioNeto: number): number {
-  return Math.round(precioNeto * 0.21 * 100) / 100
-}
-
-export function calcularTotal(precioNeto: number): number {
-  return Math.round(precioNeto * 1.21 * 100) / 100
-}
-
-// Dada la precio final con IVA incluido, devuelve el neto.
+// Dado el precio final con IVA incluido (lo que se tipea en la caja), devuelve
+// el neto. Es la única conversión que existe: el IVA nunca se calcula como 21%
+// del neto, siempre por resta (final − neto), para que neto + IVA vuelva a dar
+// exacto el precio tipeado. Espeja a models.NuevoVentaItem en el backend.
 export function calcularNeto(precioFinal: number): number {
   return Math.round((precioFinal / 1.21) * 100) / 100
 }

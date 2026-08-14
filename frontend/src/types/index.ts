@@ -50,10 +50,15 @@ export interface Factura {
   venta?: Venta
 }
 
-// Lo que el frontend envía al backend — descripción, precio neto unitario y
-// cantidad. El backend calcula IVA y total.
+// Lo que el frontend envía al backend. El backend calcula neto, IVA y total a
+// partir del precio final — es la fuente de verdad de los montos.
 export interface ItemRequest {
   descripcion: string
+  // Precio final por unidad, IVA incluido: lo que se tipeó en la caja.
+  precio_final: number
+  // Transitorio: se sigue mandando para que el deploy del frontend y el del
+  // backend puedan salir en cualquier orden (un backend viejo sólo entiende
+  // este campo). Se saca en una release posterior.
   precio_neto: number
   cantidad: number
 }
@@ -99,10 +104,12 @@ export interface ApiResponse<T> {
   error?: string
 }
 
-// Ítem en el carrito local (antes de guardar)
+// Ítem en el carrito local (antes de guardar). Guarda el precio final por
+// unidad tal cual se tipeó — el neto y el IVA se derivan de ahí, nunca al
+// revés: dividir por 1,21 pierde información y no se puede volver.
 export interface ItemCarrito {
   id: string
   descripcion: string
-  precio_neto: number
+  precio_final: number
   cantidad: number
 }

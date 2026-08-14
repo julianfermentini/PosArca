@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type { ItemCarrito, ItemRequest } from '../types'
-import { calcularIVA, calcularTotal, calcularNeto, redondear } from '../lib/utils'
+import { calcularNeto, redondear } from '../lib/utils'
 
 const newId = () => crypto.randomUUID()
 
@@ -39,10 +39,12 @@ export interface VentaState {
   getItemsParaAPI: () => ItemRequest[]
 }
 
-// Neto unitario con el descuento aplicado, redondeado por unidad igual que el
-// backend. Es la fuente de verdad: los items se mandan con este neto, así ARCA,
-// el total y el ticket ven todos la misma base imponible reducida.
-const netoUnitConDesc = (neto: number, pct: number) => redondear(neto * (1 - pct / 100))
+// El precio final por unidad es la fuente de verdad. El descuento se aplica
+// sobre él (que es lo que significa un descuento para el cliente) y el neto se
+// deriva dividiendo, igual que en models.NuevoVentaItem del backend. El IVA
+// sale siempre por RESTA (final − neto), así neto + IVA vuelve a dar exacto el
+// precio tipeado aunque la división no sea redonda.
+const finalUnitConDesc = (final: number, pct: number) => redondear(final * (1 - pct / 100))
 
 export const useVentaStore = create<VentaState>((set, get) => ({
   carrito: [],
@@ -58,13 +60,12 @@ export const useVentaStore = create<VentaState>((set, get) => ({
 
   agregarItem: () => {
     const { descripcionActual, precioActual, carrito } = get()
-    const precioFinal = parseFloat(precioActual)
+    const precioFinal = redondear(parseFloat(precioActual))
     if (!descripcionActual.trim() || isNaN(precioFinal) || precioFinal <= 0) return
-    const precioNeto = calcularNeto(precioFinal)
     const desc = descripcionActual.trim()
 
     // Si ya existe el mismo producto con el mismo precio, incrementar cantidad
-    const existente = carrito.find(i => i.descripcion === desc && i.precio_neto === precioNeto)
+    const existente = carrito.find(i => i.descripcion === desc && i.precio_final === precioFinal)
     if (existente) {
       set((s) => ({
         carrito: s.carrito.map(i => i.id === existente.id ? { ...i, cantidad: i.cantidad + 1 } : i),
@@ -73,25 +74,25 @@ export const useVentaStore = create<VentaState>((set, get) => ({
       }))
     } else {
       set((s) => ({
-        carrito: [...s.carrito, { id: newId(), descripcion: desc, precio_neto: precioNeto, cantidad: 1 }],
+        carrito: [...s.carrito, { id: newId(), descripcion: desc, precio_final: precioFinal, cantidad: 1 }],
         descripcionActual: '',
         precioActual: '',
       }))
     }
   },
 
-  agregarItemDirecto: (descripcion, precioFinal) => {
-    const precioNeto = calcularNeto(precioFinal)
-    if (!descripcion.trim() || precioNeto <= 0) return
+  agregarItemDirecto: (descripcion, precioFinalRaw) => {
+    const precioFinal = redondear(precioFinalRaw)
+    if (!descripcion.trim() || precioFinal <= 0) return
     const desc = descripcion.trim()
-    const existente = get().carrito.find(i => i.descripcion === desc && i.precio_neto === precioNeto)
+    const existente = get().carrito.find(i => i.descripcion === desc && i.precio_final === precioFinal)
     if (existente) {
       set((s) => ({
         carrito: s.carrito.map(i => i.id === existente.id ? { ...i, cantidad: i.cantidad + 1 } : i),
       }))
     } else {
       set((s) => ({
-        carrito: [...s.carrito, { id: newId(), descripcion: desc, precio_neto: precioNeto, cantidad: 1 }],
+        carrito: [...s.carrito, { id: newId(), descripcion: desc, precio_final: precioFinal, cantidad: 1 }],
       }))
     }
   },
@@ -122,26 +123,41 @@ export const useVentaStore = create<VentaState>((set, get) => ({
   // quedarían desalineados.
   setDescuento: (pct) => set({ descuentoPct: pct, montoEfectivo: 0, montoTarjeta: 0, montoBilletera: 0 }),
 
-  // Neto bruto, sin descuento — base del descuento y del "Subtotal neto".
+  // Neto bruto, sin descuento — base del "Subtotal neto" en pantalla.
   getSubtotal: () =>
-    get().carrito.reduce((acc, item) => acc + item.precio_neto * item.cantidad, 0),
+    get().carrito.reduce((acc, item) => acc + calcularNeto(item.precio_final) * item.cantidad, 0),
 
-  // Neto ya descontado — lo que realmente se factura.
+  // Neto ya descontado — la base imponible que se factura.
   getNetoConDescuento: () => {
     const pct = get().descuentoPct
-    return get().carrito.reduce((acc, item) => acc + netoUnitConDesc(item.precio_neto, pct) * item.cantidad, 0)
+    return get().carrito.reduce(
+      (acc, item) => acc + calcularNeto(finalUnitConDesc(item.precio_final, pct)) * item.cantidad, 0)
   },
 
   getDescuentoNeto: () => redondear(get().getSubtotal() - get().getNetoConDescuento()),
 
   // Descuento en pesos con IVA incluido — para la línea del ticket.
-  getDescuentoTotal: () => redondear(calcularTotal(get().getSubtotal()) - get().getTotal()),
+  getDescuentoTotal: () => {
+    const pct = get().descuentoPct
+    return redondear(get().carrito.reduce(
+      (acc, item) => acc + (item.precio_final - finalUnitConDesc(item.precio_final, pct)) * item.cantidad, 0))
+  },
 
-  getIVA: () => calcularIVA(get().getNetoConDescuento()),
+  // IVA por resta, igual que el backend: nunca como 21% del neto redondeado.
+  getIVA: () => {
+    const pct = get().descuentoPct
+    return redondear(get().carrito.reduce((acc, item) => {
+      const final = finalUnitConDesc(item.precio_final, pct)
+      return acc + (final - calcularNeto(final)) * item.cantidad
+    }, 0))
+  },
 
+  // Suma de los precios finales: sin una sola división, así no puede
+  // discrepar del total que calcula el backend ni del que autoriza ARCA.
   getTotal: () => {
-    const neto = get().getNetoConDescuento()
-    return redondear(neto + calcularIVA(neto))
+    const pct = get().descuentoPct
+    return redondear(get().carrito.reduce(
+      (acc, item) => acc + finalUnitConDesc(item.precio_final, pct) * item.cantidad, 0))
   },
 
   getSumaPagos: () => {
@@ -150,13 +166,21 @@ export const useVentaStore = create<VentaState>((set, get) => ({
   },
 
   // Una línea por producto, con cantidad — el backend guarda una fila por línea.
-  // El neto ya lleva el descuento aplicado, así ARCA factura la base reducida.
+  // El precio ya lleva el descuento aplicado, así ARCA factura el monto reducido.
+  //
+  // Se mandan los dos precios a propósito: el backend nuevo usa precio_final y
+  // uno viejo sólo entiende precio_neto, así el deploy del frontend y el del
+  // backend pueden salir en cualquier orden sin cortar la caja.
   getItemsParaAPI: () => {
     const pct = get().descuentoPct
-    return get().carrito.map(item => ({
-      descripcion: item.descripcion,
-      precio_neto: netoUnitConDesc(item.precio_neto, pct),
-      cantidad: item.cantidad,
-    }))
+    return get().carrito.map(item => {
+      const final = finalUnitConDesc(item.precio_final, pct)
+      return {
+        descripcion: item.descripcion,
+        precio_final: final,
+        precio_neto: calcularNeto(final),
+        cantidad: item.cantidad,
+      }
+    })
   },
 }))

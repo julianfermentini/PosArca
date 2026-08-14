@@ -1,5 +1,5 @@
 import type { ItemCarrito } from '../../../types'
-import { formatPrecio, calcularTotal } from '../../../lib/utils'
+import { formatPrecio } from '../../../lib/utils'
 
 interface CarritoPanelProps {
   items: ItemCarrito[]
@@ -43,7 +43,7 @@ export function CarritoPanel({ items, onIncrementar, onDecrementar }: CarritoPan
                   {item.descripcion}
                 </p>
                 <p className="font-mono text-gray-400" style={{ fontSize: 11 }}>
-                  {formatPrecio(calcularTotal(item.precio_neto))} c/u
+                  {formatPrecio(item.precio_final)} c/u
                 </p>
               </div>
 
@@ -87,7 +87,7 @@ export function CarritoPanel({ items, onIncrementar, onDecrementar }: CarritoPan
 
               {/* Total del ítem */}
               <p className="font-mono font-bold text-gray-900 flex-shrink-0" style={{ fontSize: 15, minWidth: 72, textAlign: 'right' }}>
-                {formatPrecio(calcularTotal(item.precio_neto) * item.cantidad)}
+                {formatPrecio(item.precio_final * item.cantidad)}
               </p>
             </div>
           ))

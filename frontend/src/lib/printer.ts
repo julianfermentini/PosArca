@@ -1,6 +1,5 @@
 import type { Empresa } from './api'
 import type { ItemCarrito, RangoComprobante } from '../types'
-import { calcularTotal } from './utils'
 
 // ─── ESC/POS encoder mínimo para impresoras térmicas ──────────────────────────
 
@@ -90,7 +89,7 @@ export interface DatosTicketFront {
   tipoCmp:            string
   numero:             string
   // total es POR UNIDAD; cantidad ausente vale 1
-  items:              Array<{ descripcion: string; precioNeto: number; total: number; cantidad?: number }>
+  items:              Array<{ descripcion: string; total: number; cantidad?: number }>
   subtotal:           number
   iva:                number
   total:              number
@@ -130,13 +129,12 @@ export function buildEmpresaBase(empresa: Empresa | null) {
   }
 }
 
-// Ítems del carrito en el shape que espera el ticket: precioNeto es por
-// unidad, total ya incluye IVA (calcularTotal), tal como lo imprime el ESC/POS.
+// Ítems del carrito en el shape que espera el ticket: total es el precio por
+// unidad con IVA incluido, que es lo único que imprime el ESC/POS.
 export function itemsParaTicket(carrito: ItemCarrito[]) {
   return carrito.map(it => ({
     descripcion: it.descripcion,
-    precioNeto:  it.precio_neto,
-    total:       calcularTotal(it.precio_neto),
+    total:       it.precio_final,
     cantidad:    it.cantidad,
   }))
 }
@@ -258,7 +256,7 @@ export interface DatosTicketNoFiscal {
   defensaConsumidor?: string
   condicionIVA?:      string
   // total es POR UNIDAD; cantidad ausente vale 1
-  items:              Array<{ descripcion: string; precioNeto: number; total: number; cantidad?: number }>
+  items:              Array<{ descripcion: string; total: number; cantidad?: number }>
   subtotal:           number
   iva:                number
   total:              number

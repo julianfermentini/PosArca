@@ -69,33 +69,56 @@ type VentaItem struct {
 
 func (VentaItem) TableName() string { return "venta_items" }
 
-// ItemRequest es lo que llega del frontend: descripción, precio neto unitario
-// y cantidad. El backend calcula IVA y total. Cantidad ausente o 0 vale 1, para
-// aceptar payloads viejos (ventas offline encoladas antes de este campo) que
-// mandaban una fila por unidad.
+// ItemRequest es lo que llega del frontend. El backend calcula neto, IVA y
+// total. Cantidad ausente o 0 vale 1, para aceptar payloads viejos (ventas
+// offline encoladas antes de ese campo) que mandaban una fila por unidad.
 type ItemRequest struct {
-	Descripcion string  `json:"descripcion" binding:"required"`
-	PrecioNeto  float64 `json:"precio_neto" binding:"required,gt=0"`
-	Cantidad    int     `json:"cantidad" binding:"omitempty,gte=1,lte=9999"`
+	Descripcion string `json:"descripcion" binding:"required"`
+	// Precio final por unidad, IVA incluido — lo que tipeó el cajero y lo que
+	// paga el cliente. Es la fuente de verdad de los montos de la línea.
+	PrecioFinal float64 `json:"precio_final" binding:"required_without=PrecioNeto,omitempty,gt=0"`
+	// Legacy: las ventas encoladas offline por una versión anterior mandan el
+	// neto. Se sigue aceptando mientras pueda quedar alguna sin sincronizar.
+	PrecioNeto float64 `json:"precio_neto" binding:"omitempty,gt=0"`
+	Cantidad   int     `json:"cantidad" binding:"omitempty,gte=1,lte=9999"`
 }
 
-// NuevoVentaItem construye un VentaItem aplicando IVA 21%. El IVA se redondea
-// por unidad y recién ahí se multiplica por cantidad, para que N unidades en
-// una línea sumen exactamente lo mismo que N líneas de una unidad.
+// precioFinalUnit resuelve el precio final por unidad. Para las ventas viejas
+// lo reconstruye con la fórmula anterior (neto + IVA redondeado por unidad),
+// que reproduce exactamente los montos que esa versión ya imprimió en el
+// ticket: una venta encolada no puede cambiar de importe al sincronizarse.
+func (r ItemRequest) precioFinalUnit() float64 {
+	if r.PrecioFinal > 0 {
+		return redondear(r.PrecioFinal)
+	}
+	return redondear(r.PrecioNeto + redondear(r.PrecioNeto*0.21))
+}
+
+// NuevoVentaItem construye un VentaItem aplicando IVA 21%.
+//
+// El precio final es la fuente de verdad: el neto sale de dividir y el IVA por
+// RESTA, no como 21% del neto redondeado. Así neto + IVA == precio final
+// siempre y exacto, aunque la división no dé redonda — que era lo que hacía
+// que un ítem de $100 terminara valiendo $99,99.
+//
+// Todo se redondea por unidad antes de multiplicar por cantidad, para que N
+// unidades en una línea sumen exactamente lo mismo que N líneas de una unidad.
 func NuevoVentaItem(ventaID uuid.UUID, req ItemRequest, orden int) VentaItem {
 	cantidad := req.Cantidad
 	if cantidad < 1 {
 		cantidad = 1
 	}
-	ivaUnit := redondear(req.PrecioNeto * 0.21)
+	final := req.precioFinalUnit()
+	neto := redondear(final / 1.21)
+	ivaUnit := redondear(final - neto)
 	return VentaItem{
 		ID:          uuid.New(),
 		VentaID:     ventaID,
 		Descripcion: req.Descripcion,
 		Cantidad:    cantidad,
-		PrecioNeto:  req.PrecioNeto,
+		PrecioNeto:  neto,
 		IVA:         redondear(ivaUnit * float64(cantidad)),
-		Total:       redondear((req.PrecioNeto + ivaUnit) * float64(cantidad)),
+		Total:       redondear(final * float64(cantidad)),
 		Orden:       orden,
 	}
 }

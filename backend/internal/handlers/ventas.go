@@ -25,7 +25,8 @@ func NuevoVentasHandler(db *gorm.DB, worker *Worker) *VentasHandler {
 
 type CrearVentaRequest struct {
 	Tipo           models.TipoComprobante `json:"tipo" binding:"required,oneof=TICKET FACTURA"`
-	Items          []models.ItemRequest   `json:"items" binding:"required,min=1"`
+	// dive: sin esto validator no chequea los tags de cada ItemRequest.
+	Items          []models.ItemRequest   `json:"items" binding:"required,min=1,dive"`
 	MontoEfectivo  float64                `json:"monto_efectivo"`
 	MontoTarjeta   float64                `json:"monto_tarjeta"`
 	MontoBilletera float64                `json:"monto_billetera"`

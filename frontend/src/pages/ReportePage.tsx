@@ -233,7 +233,7 @@ export default function ReportePage() {
     // por unidad + cantidad, así que se divide (filas viejas: cantidad 1, no cambia).
     const itemsData = v.items.map(it => {
       const qty = it.cantidad && it.cantidad > 0 ? it.cantidad : 1
-      return { descripcion: it.descripcion, precioNeto: it.precio_neto, total: it.total / qty, cantidad: qty }
+      return { descripcion: it.descripcion, total: it.total / qty, cantidad: qty }
     })
 
     if (v.cae) {

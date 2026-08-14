@@ -23,7 +23,8 @@ func NuevoFacturasHandler(db *gorm.DB, worker *Worker) *FacturasHandler {
 }
 
 type CrearFacturaRequest struct {
-	Items          []models.ItemRequest `json:"items" binding:"required,min=1"`
+	// dive: sin esto validator no chequea los tags de cada ItemRequest.
+	Items          []models.ItemRequest `json:"items" binding:"required,min=1,dive"`
 	MontoEfectivo  float64              `json:"monto_efectivo"`
 	MontoTarjeta   float64              `json:"monto_tarjeta"`
 	MontoBilletera float64              `json:"monto_billetera"`
