@@ -4,6 +4,7 @@ import { useSyncStore } from '../stores/syncStore'
 import { useProductosStore, type Producto } from '../stores/productosStore'
 import { useEmpresaStore } from '../stores/empresaStore'
 import { usePrinterStore } from '../stores/printerStore'
+import { useUIStore, escalaActiva } from '../stores/uiStore'
 import { ProductoPanel } from '../components/features/venta/ProductoPanel'
 import { CarritoPanel } from '../components/features/venta/CarritoPanel'
 import { CobroPanel } from '../components/features/venta/CobroPanel'
@@ -18,6 +19,7 @@ export default function VentaPage() {
   const printer = usePrinterStore()
   const { empresa } = useEmpresaStore()
   const { productos } = useProductosStore()
+  const { escalaCaja } = useUIStore()
 
   const [paso, setPaso] = useState<Paso>('descripcion')
   const [mobileTab, setMobileTab] = useState<'agregar' | 'carrito' | 'cobrar'>('agregar')
@@ -105,7 +107,9 @@ export default function VentaPage() {
     `flex-1 py-2 text-xs font-bold transition-colors rounded-lg ${mobileTab === t ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500'}`
 
   return (
-    <div className="h-full flex flex-col overflow-hidden" style={{ background: '#F3F4F6' }}>
+    // zoom escala texto, botones y espaciado de toda la Caja desde un solo
+    // lugar, y reflota el layout de verdad (transform: scale recortaría).
+    <div className="h-full flex flex-col overflow-hidden" style={{ background: '#F3F4F6', zoom: escalaActiva(escalaCaja).valor }}>
 
       {/* ── Mobile tab selector ── */}
       <div className="lg:hidden flex p-2 gap-1 bg-white border-b flex-shrink-0" style={{ borderColor: 'rgba(0,0,0,0.06)' }}>
@@ -118,9 +122,12 @@ export default function VentaPage() {
 
       <div className="flex flex-1 overflow-hidden">
 
-      {/* ── LEFT: Product entry ── */}
-      <div className={`${mobileTab === 'agregar' ? 'flex' : 'hidden'} lg:flex flex-col bg-white border-r overflow-y-auto flex-shrink-0 w-full lg:w-auto`}
-        style={{ borderColor: 'rgba(0,0,0,0.06)', padding: 24, gap: 18, ...(window.innerWidth >= 1024 ? { width: 380 } : {}) }}>
+      {/* ── LEFT: Product entry ──
+          Ancho preferido, no fijo: si falta lugar (pantalla chica o escala
+          grande) las columnas laterales ceden antes que el carrito, que es
+          el único flex-1 y si no se aplastaría hasta quedar inservible. */}
+      <div className={`${mobileTab === 'agregar' ? 'flex' : 'hidden'} lg:flex flex-col bg-white border-r overflow-y-auto w-full lg:w-auto lg:basis-[380px] lg:shrink lg:min-w-[240px]`}
+        style={{ borderColor: 'rgba(0,0,0,0.06)', padding: 24, gap: 18 }}>
         <ProductoPanel
           productos={productos}
           paso={paso}
@@ -134,7 +141,10 @@ export default function VentaPage() {
       </div>
 
       {/* ── CENTER: Cart ── */}
-      <div className={`${mobileTab === 'carrito' ? 'flex' : 'hidden'} lg:flex flex-1 flex-col min-w-0 w-full`} style={{ background: '#F3F4F6' }}>
+      {/* El carrito es el único flex-1 (basis 0), así que sin un mínimo se
+          aplastaría él para dejar enteras a las laterales. Con el mínimo el
+          faltante pasa a ser desborde y son ellas las que ceden. */}
+      <div className={`${mobileTab === 'carrito' ? 'flex' : 'hidden'} lg:flex flex-1 flex-col min-w-0 lg:min-w-[280px] w-full`} style={{ background: '#F3F4F6' }}>
         <CarritoPanel
           items={store.carrito}
           onIncrementar={store.incrementarItem}
@@ -143,8 +153,8 @@ export default function VentaPage() {
       </div>
 
       {/* ── RIGHT: Totals ── */}
-      <div className={`${mobileTab === 'cobrar' ? 'flex' : 'hidden'} lg:flex flex-col bg-white border-l flex-shrink-0 w-full lg:w-auto`}
-        style={{ borderColor: 'rgba(0,0,0,0.06)', ...(window.innerWidth >= 1024 ? { width: 360 } : {}), overflow: 'hidden' }}>
+      <div className={`${mobileTab === 'cobrar' ? 'flex' : 'hidden'} lg:flex flex-col bg-white border-l w-full lg:w-auto lg:basis-[360px] lg:shrink lg:min-w-[260px]`}
+        style={{ borderColor: 'rgba(0,0,0,0.06)', overflow: 'hidden' }}>
         <CobroPanel
           total={total} neto={neto} iva={iva} descPct={descPct} descNeto={descNeto}
           onChangeDescuento={store.setDescuento}

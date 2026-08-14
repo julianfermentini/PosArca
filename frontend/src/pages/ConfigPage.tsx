@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useProductosStore } from '../stores/productosStore'
 import { useEmpresaStore } from '../stores/empresaStore'
 import { usePrinterStore } from '../stores/printerStore'
+import { useUIStore, ESCALAS_CAJA, escalaActiva } from '../stores/uiStore'
 import { formatPrecio, extractError } from '../lib/utils'
 import { authApi } from '../lib/api'
 
@@ -131,6 +132,43 @@ function SeccionImpresora() {
   )
 }
 
+// ─── Tamaño de letra section ──────────────────────────────────────────────────
+function SeccionTamanoLetra() {
+  const { escalaCaja, setEscalaCaja } = useUIStore()
+  // Por escalaActiva y no directo, para que el selector marque lo mismo que
+  // está aplicando la Caja incluso si lo persistido no matchea ninguna opción.
+  const activa = escalaActiva(escalaCaja)
+
+  return (
+    <Card>
+      <SectionTitle sub="Agranda la pantalla de Caja para leerla de lejos. Se guarda en esta tablet y no afecta a las demás pantallas.">
+        Tamaño de letra
+      </SectionTitle>
+
+      <div className="flex rounded-xl p-1" style={{ background: '#F3F4F6', gap: 4 }}>
+        {ESCALAS_CAJA.map(e => {
+          const activo = activa.id === e.id
+          return (
+            <button
+              key={e.id}
+              onPointerDown={ev => { ev.preventDefault(); setEscalaCaja(e.id) }}
+              className="flex-1 rounded-lg text-sm font-semibold transition-all touch-manipulation active:scale-95"
+              style={{
+                height: 46, border: 'none', cursor: 'pointer',
+                background: activo ? '#3B72E0' : 'transparent',
+                color: activo ? '#fff' : '#6B7280',
+                boxShadow: activo ? '0 1px 3px rgba(59,114,224,0.3)' : 'none',
+              }}
+            >
+              {e.label}
+            </button>
+          )
+        })}
+      </div>
+    </Card>
+  )
+}
+
 // ─── Empresa section ──────────────────────────────────────────────────────────
 function SeccionEmpresa() {
   const { empresa, guardar } = useEmpresaStore()
@@ -179,7 +217,7 @@ function SeccionEmpresa() {
   }
 
   return (
-    <Card style={{ marginBottom: 16 }}>
+    <Card>
       <SectionTitle sub="Aparecen en el encabezado de tickets impresos (requerido por ARCA).">
         Datos del negocio
       </SectionTitle>
@@ -304,7 +342,7 @@ function SeccionCambiarPassword() {
   }
 
   return (
-    <Card style={{ marginBottom: 16 }}>
+    <Card>
       <SectionTitle sub="Necesitás tu contraseña actual para poder cambiarla.">
         Cambiar contraseña
       </SectionTitle>
@@ -403,7 +441,10 @@ export default function ConfigPage() {
 
   return (
     <div className="h-full overflow-y-auto" style={{ background: '#F3F4F6' }}>
-      <div style={{ padding: '28px 36px', maxWidth: 760 }}>
+      {/* El separador entre secciones lo pone el gap del contenedor, no cada
+          sección: si no, agregar una obliga a acordarse de darle margen a la
+          anterior, que era justo la que no lo tenía por ser la última. */}
+      <div className="flex flex-col" style={{ padding: '28px 36px', maxWidth: 760, gap: 16 }}>
 
         {/* ── Datos del negocio ── */}
         <SeccionEmpresa />
@@ -414,8 +455,11 @@ export default function ConfigPage() {
         {/* ── Impresora ── */}
         <SeccionImpresora />
 
+        {/* ── Tamaño de letra ── */}
+        <SeccionTamanoLetra />
+
         {/* ── Productos ── */}
-        <div style={{ marginTop: 8 }}>
+        <div>
           <div className="flex items-center justify-between" style={{ marginBottom: 16 }}>
             <div>
               <h2 className="font-bold text-gray-900" style={{ fontSize: 18, margin: 0 }}>
