@@ -20,7 +20,7 @@
 
 ---
 
-> ## 🟢 Esto está en producción, hoy, con plata real
+> ## 🟢 Esto está en producción, hoy, reemplazando registradoras fiscales 
 >
 > Un restaurante de Mendoza, Argentina **cobra con este sistema desde julio de 2026**.
 > Reemplazó a la registradora fiscal del local: cada ticket que recibe un cliente sale de este
